@@ -1,0 +1,18 @@
+# render.yaml - Infrastructure as Code for Black Box Scanner
+
+services:
+  - type: web
+    name: black-box-scanner
+    env: python
+    region: oregon # Use a region near the US market (e.g., oregon or ohio for US)
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
+    healthCheckPath: "/" # Render checks this path to ensure the app is running
+
+    envVars:
+      # CRITICAL: These must be set manually on the Render dashboard as "Secret Files" or "Secrets"
+      # We define them here so the structure is clear, but the values are set in the UI.
+      - key: PPLX_API_KEY
+        sync: false # Do not sync key from Git! MUST be set as a Secret Environment Variable.
+      - key: FLASK_SECRET_KEY
+        sync: false

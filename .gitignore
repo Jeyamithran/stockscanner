@@ -1,0 +1,13 @@
+# Python artifacts
+__pycache__/
+*.pyc
+venv/
+
+# Environment and Secrets (CRITICAL)
+.env
+*.env
+*.key
+
+# Flask/Gunicorn logs and runtime files
+*.log
+.DS_Store

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Black Box Scanner | Pro Trader Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <style>
+        /* Base Dark Theme (Deep Night) */
+        :root {
+            /* APPLE SYSTEM FONT STACK for clarity and readability */
+            --font-family-primary: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            
+            --bs-body-bg: #0d1117;
+            --bs-body-color: #f0f6fc; /* Increased contrast for main body text */
+            --bs-card-bg: #161b22;
+            --bs-border-color: #30363d;
+            --bs-primary: #58a6ff;
+            --text-data: #6fbbd3; /* Light Blue for Tickers */
+            --text-gain: #34d058; /* Bright Green for Profit */
+            --text-muted-enhanced: #8b949e; /* Better contrast for muted text */
+        }
+        /* Light Theme Overrides */
+        body.light-mode {
+            --bs-body-bg: #f5f5f5;
+            --bs-body-color: #333;
+            --bs-card-bg: #ffffff;
+            --bs-border-color: #ccc;
+            --text-data: #007bff;
+            --text-gain: #28a745;
+            --text-muted-enhanced: #666;
+        }
+
+        body {
+            background-color: var(--bs-body-bg);
+            color: var(--bs-body-color);
+            font-family: var(--font-family-primary); /* Apply Apple Font Stack */
+            transition: all 0.3s;
+        }
+        .dashboard-header { border-bottom: 2px solid var(--bs-border-color); padding-bottom: 15px; margin-bottom: 25px; }
+        .dashboard-header .lead { color: var(--text-muted-enhanced) !important; font-weight: 500; }
+        .card { 
+            background-color: var(--bs-card-bg); 
+            border: 1px solid var(--bs-border-color); 
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+        }
+        .table-dark thead th, .table-dark { border-color: var(--bs-border-color); }
+        .table-dark tbody tr:hover { background-color: #21262d; cursor: pointer; }
+        
+        /* Specific data colors */
+        .text-ticker { color: var(--text-data); font-weight: 600; }
+        .text-gain-percent { color: var(--text-gain); font-weight: 600; }
+        .text-muted { color: var(--text-muted-enhanced) !important; }
+        
+        /* Font Size Control */
+        body { font-size: 14px; }
+        body.font-small { font-size: 12px; }
+        body.font-large { font-size: 16px; }
+
+        /* Mobile Adjustments */
+        @media (max-width: 992px) {
+            .dashboard-header { text-align: left !important; }
+            .dashboard-header h1 { font-size: 1.8rem; }
+            .col-lg-4 { padding-bottom: 20px; }
+        }
+    </style>
+</head>
+<body class="dark-mode">
+
+<div class="container-fluid p-3 p-md-4">
+    <div class="dashboard-header d-flex justify-content-between align-items-center flex-wrap">
+        <div>
+            <h1 class="text-info mb-0">Black Box Scanner <span class="badge bg-danger">PRO LIVE</span></h1>
+            
+            <p class="lead small mt-1 mb-0 d-none d-md-block">High-Velocity Breakout Scanner.</p>
+        </div>
+        
+        <div class="d-flex gap-3 align-items-center mt-2 mt-md-0">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="themeSwitch">
+                <label class="form-check-label" for="themeSwitch">Dark Mode</label>
+            </div>
+            <select id="fontSizeSelect" class="form-select form-select-sm bg-dark text-white" style="width: 120px;">
+                <option value="font-small">Small Font</option>
+                <option value="" selected>Medium Font</option>
+                <option value="font-large">Large Font</option>
+            </select>
+            <button id="runScanBtn" class="btn btn-primary btn-sm px-4">Run Scanner</button>
+        </div>
+    </div>
+    <p class="small text-muted mb-4" id="lastUpdated">Last Scan: Never</p>
+
+
+    <div id="scanner-alerts" class="row">
+        
+        <div class="col-lg-4 col-sm-12">
+            <div class="card">
+                <div class="card-header bg-danger text-white"><h5>🔥 Small Cap / High Beta</h5></div>
+                <div class="card-body p-0"><table class="table table-dark table-striped table-hover mb-0">
+                    <thead><tr><th>Ticker</th><th>Entry</th><th>Target (%)</th></tr></thead>
+                    <tbody id="SmallCap-table"><tr><td colspan="3" class="text-center text-muted">Awaiting Scan Data...</td></tr></tbody>
+                </table></div>
+            </div>
+        </div>
+
+        <div class="col-lg-4 col-sm-12">
+            <div class="card">
+                <div class="card-header bg-warning text-dark"><h5>🟡 Mid Cap / Liquidity Mix</h5></div>
+                <div class="card-body p-0"><table class="table table-dark table-striped table-hover mb-0">
+                    <thead><tr><th>Ticker</th><th>Entry</th><th>Target (%)</th></tr></thead>
+                    <tbody id="MidCap-table"><tr><td colspan="3" class="text-center text-muted">Awaiting Scan Data...</td></tr></tbody>
+                </table></div>
+            </div>
+        </div>
+
+        <div class="col-lg-4 col-sm-12">
+            <div class="card">
+                <div class="card-header bg-success text-white"><h5>🟢 Large Cap / Institutional</h5></div>
+                <div class="card-body p-0"><table class="table table-dark table-striped table-hover mb-0">
+                    <thead><tr><th>Ticker</th><th>Entry</th><th>Target (%)</th></tr></thead>
+                    <tbody id="LargeCap-table"><tr><td colspan="3" class="text-center text-muted">Awaiting Scan Data...</td></tr>
+                    </tbody>
+                </table></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-3">
+        <div class="col-12">
+            <div class="card">
+                <div id="detailedAnalysisCard" class="p-4">
+                    <p class="text-center text-muted mb-0">Click on any alert in the tables above to view the detailed Perplexity Pro analysis card and trading plan.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    const MARKET_CAPS = ['SmallCap', 'MidCap', 'LargeCap'];
+    const runScanBtn = document.getElementById('runScanBtn');
+    const lastUpdated = document.getElementById('lastUpdated');
+    const fontSizeSelect = document.getElementById('fontSizeSelect'); // Defined globally for applyTheme
+    let allAlertData = {}; 
+    let currentActiveRow = null;
+
+    // --- UI CONTROL FUNCTIONS ---
+    const themeSwitch = document.getElementById('themeSwitch');
+
+    // SAFEST FIX: Function to handle theme toggling on the select box
+    function applyTheme(isDark) {
+        // 1. Apply dark/light theme to the body
+        document.body.classList.toggle('light-mode', !isDark);
+        document.body.classList.toggle('dark-mode', isDark);
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        
+        // 2. CRITICAL FIX: Handle select box theme using .split(' ')
+        const element = fontSizeSelect;
+        const darkClasses = 'bg-dark text-white';
+        const lightClasses = 'bg-light text-dark';
+
+        // 2a. Safely remove ALL theme classes that might conflict
+        const allThemeClasses = (darkClasses + ' ' + lightClasses).split(' ');
+        element.classList.remove(...allThemeClasses);
+
+        // 2b. Add the correct set of classes
+        if (isDark) {
+            element.classList.add(...darkClasses.split(' '));
+        } else {
+            element.classList.add(...lightClasses.split(' '));
+        }
+    }
+
+    function applyFontSize(sizeClass) {
+        document.body.className = document.body.className.replace(/\bfont-(small|large)\b/g, '');
+        if (sizeClass) {
+            document.body.classList.add(sizeClass);
+        }
+        localStorage.setItem('fontSize', sizeClass);
+    }
+
+    // Load saved settings
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    const savedFontSize = localStorage.getItem('fontSize') || '';
+
+    if (savedTheme === 'light') {
+        themeSwitch.checked = false;
+        applyTheme(false);
+    } else {
+        themeSwitch.checked = true;
+        applyTheme(true);
+    }
+    
+    applyFontSize(savedFontSize);
+    fontSizeSelect.value = savedFontSize;
+
+    // Event Listeners for controls
+    themeSwitch.addEventListener('change', () => applyTheme(themeSwitch.checked));
+    fontSizeSelect.addEventListener('change', (e) => applyFontSize(e.target.value));
+
+    // --- SCANNER FUNCTIONS (No change needed here) ---
+    async function fetchData() {
+        runScanBtn.textContent = 'Scanning...';
+        runScanBtn.disabled = true;
+        
+        try {
+            const response = await fetch('/api/scan', { method: 'POST' });
+            const result = await response.json();
+
+            if (result.success) {
+                allAlertData = result; 
+                displayAlerts(result);
+                lastUpdated.textContent = `Last Scan: ${new Date().toLocaleTimeString()}`;
+            } else {
+                console.error("API Error:", result.error);
+                alert(`Scanner Failed: ${result.error}`);
+            }
+
+        } catch (error) {
+            console.error('Fetch Error:', error);
+            alert('A network or server error occurred. Check connection.');
+        } finally {
+            runScanBtn.textContent = 'Run Scanner';
+            runScanBtn.disabled = false;
+        }
+    }
+
+    function displayAlerts(fullResult) {
+        const data = fullResult.data;
+        MARKET_CAPS.forEach(cap => {
+            const tableBody = document.getElementById(`${cap}-table`);
+            tableBody.innerHTML = ''; 
+            const alerts = data[cap] || []; 
+
+            if (alerts.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="3" class="text-center text-muted">No high-probability setups detected.</td></tr>`;
+                return;
+            }
+
+            alerts.forEach((alert, index) => {
+                const row = document.createElement('tr');
+                row.className = 'alert-row'; 
+                
+                row.setAttribute('data-cap', cap);
+                row.setAttribute('data-ticker', alert.Ticker);
+                
+                row.onclick = function() {
+                    if (currentActiveRow) {
+                        currentActiveRow.classList.remove('active');
+                    }
+                    this.classList.add('active');
+                    currentActiveRow = this;
+                    showAnalysisCard(cap, alert.Ticker);
+                };
+
+                row.innerHTML = `
+                    <td>
+                        <strong class="text-ticker">${alert.Ticker}</strong> 
+                        <span class="badge ${alert.PrimaryCatalyst.toLowerCase().includes('sec filing') || alert.PrimaryCatalyst.toLowerCase().includes('news') ? 'bg-danger' : 'bg-info'}">
+                            ${alert.PrimaryCatalyst ? 'CATALYST' : 'TECH'}
+                        </span>
+                    </td>
+                    <td>$${parseFloat(alert.EntryPrice).toFixed(2)}</td>
+                    <td>
+                        <strong class="text-gain-percent">+${parseFloat(alert.PotentialGainPercent).toFixed(2)}%</strong>
+                        <span class="text-muted small">@$${parseFloat(alert.TargetPrice).toFixed(2)}</span>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        });
+        
+        // Auto-select the first alert on load
+        const firstCap = MARKET_CAPS.find(cap => data[cap] && data[cap].length > 0);
+        if (firstCap && data[firstCap].length > 0) {
+            const firstRow = document.querySelector(`#${firstCap}-table tr`);
+            if (firstRow) {
+                firstRow.click();
+            }
+        }
+    }
+
+    function showAnalysisCard(cap, ticker) {
+        const analysisDiv = document.getElementById('detailedAnalysisCard');
+        const alertData = allAlertData.data[cap]; 
+        if (!alertData) return;
+
+        const alert = alertData.find(a => a.Ticker === ticker);
+        if (!alert) {
+            analysisDiv.innerHTML = '<p class="text-center p-4 text-muted mb-0">Analysis data not found.</p>';
+            return;
+        }
+
+        const analysisPoints = alert.DetailedAnalysis.split('\n')
+            .filter(item => item.trim().startsWith('*'))
+            .map(item => `<li>${item.trim().substring(1).trim()}</li>`)
+            .join('');
+
+        analysisDiv.innerHTML = `
+            <div class="card-header bg-dark text-white p-3">
+                <h4 class="mb-0 text-info">${alert.Ticker} - Trading Thesis & Action Plan</h4>
+            </div>
+            <div class="card-body p-4">
+                <div class="row">
+                    <div class="col-md-6 border-end border-secondary">
+                        <h5>Trade Setup & Thesis <span class="badge bg-warning text-dark">WHY NOW?</span></h5>
+                        <ul class="list-unstyled">${analysisPoints}</ul>
+                        <p class="mt-3"><strong>Primary Catalyst:</strong> <span class="text-light">${alert.PrimaryCatalyst}</span></p>
+                    </div>
+                    <div class="col-md-6">
+                        <h5>Actionable Strategy <span class="badge bg-primary">THE PLAN</span></h5>
+                        <p class="mb-1"><strong>Entry Trigger:</strong> <span class="text-success fs-5">$${parseFloat(alert.EntryPrice).toFixed(2)}</span></p>
+                        <p class="mb-1"><strong>Target Profit (Exit):</strong> <span class="text-info fs-5">$${parseFloat(alert.TargetPrice).toFixed(2)}</span></p>
+                        <p class="mb-1"><strong>Potential Gain:</strong> <span class="text-gain-percent fs-4">${parseFloat(alert.PotentialGainPercent).toFixed(2)}%</span></p>
+                        <p class="mb-1"><strong>Maximum Stop Loss:</strong> <span class="text-danger fs-5">$${parseFloat(alert.StopPrice).toFixed(2)}</span></p>
+                        <small class="text-muted">Tier: ${cap}. Calculated Risk/Reward is implicitly based on these levels.</small>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    runScanBtn.addEventListener('click', fetchData);
+    fetchData(); 
+</script>
+</body>
+</html>
