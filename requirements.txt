@@ -2,4 +2,5 @@ Flask==3.0.0
 gunicorn==21.2.0
 python-dotenv==1.0.0
 openai>=1.0.0
-Flask-HTTPAuth==4.1.0
+Flask-HTTPAuth==4.8.0  # Ensure this is 4.8.0 or higher
+Werkzeug==3.0.0        # Keep Werkzeug locked to Flask 3.0.0 requirements
