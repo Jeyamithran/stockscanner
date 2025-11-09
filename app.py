@@ -3,9 +3,10 @@ import json
 import re
 import logging
 import ast
+import sqlite3
 from json import JSONDecodeError
 from datetime import datetime, date
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Iterable
 
 import requests
 from flask import Flask, jsonify, render_template, request
@@ -21,11 +22,12 @@ import xml.etree.ElementTree as ET
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
+app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change_me_locally_only")
 
 # --- AUTHENTICATION ---
 auth = HTTPBasicAuth()
+
 USER_DATA = {
     "username": os.environ.get("SCANNER_USERNAME", "admin"),
     "password_hash": generate_password_hash(
@@ -34,6 +36,7 @@ USER_DATA = {
     )
 }
 
+
 @auth.verify_password
 def verify_password(username, password):
     if username == USER_DATA["username"]:
@@ -41,20 +44,225 @@ def verify_password(username, password):
             return username
     return None
 
-# --- Perplexity Client (optional) ---
+
+# --- Perplexity Client ---
 PERPLEXITY_API_KEY = os.environ.get("PPLX_API_KEY")
 if not PERPLEXITY_API_KEY:
-    logging.warning("PPLX_API_KEY not found. Perplexity features will be disabled; using local fallbacks.")
+    logging.error("PPLX_API_KEY not found. Perplexity features will be disabled.")
     pplx_client = None
 else:
-    pplx_client = OpenAI(api_key=PERPLEXITY_API_KEY, base_url="https://api.perplexity.ai")
+    pplx_client = OpenAI(
+        api_key=PERPLEXITY_API_KEY,
+        base_url="https://api.perplexity.ai"
+    )
 
 # --- External API keys ---
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
 BENZINGA_API_KEY = os.environ.get("BENZINGA_API_KEY")
 
+PROFILE_LABELS = {
+    "hedge_fund": "Hedge Fund PM",
+    "pro_trader": "Pro Momentum",
+    "catalyst": "News / SEC"
+}
+
+
+def format_profile_label(profile_key: str) -> str:
+    if not profile_key:
+        return ""
+    return PROFILE_LABELS.get(profile_key, profile_key.replace("_", " ").title())
+
+os.makedirs(app.instance_path, exist_ok=True)
+ALERT_HISTORY_DB = os.environ.get(
+    "ALERT_HISTORY_DB_PATH",
+    os.path.join(app.instance_path, "alert_history.db")
+)
+
+
+def init_alert_history_db() -> None:
+    """Ensure the SQLite database and table exist for persisted alert history."""
+    conn = sqlite3.connect(ALERT_HISTORY_DB)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS alert_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp_iso TEXT NOT NULL,
+                date TEXT,
+                time TEXT,
+                profile TEXT,
+                tier TEXT,
+                ticker TEXT,
+                entry REAL,
+                target REAL,
+                stop REAL,
+                scan_price REAL,
+                potential_gain_pct REAL,
+                primary_catalyst TEXT,
+                detailed_analysis TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_alert_history_ticker ON alert_history(ticker)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_alert_history_timestamp ON alert_history(timestamp_iso)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def insert_alert_rows(rows: Iterable[Tuple[Any, ...]]) -> None:
+    rows = list(rows)
+    if not rows:
+        return
+    conn = sqlite3.connect(ALERT_HISTORY_DB)
+    try:
+        conn.executemany(
+            """
+            INSERT INTO alert_history (
+                timestamp_iso,
+                date,
+                time,
+                profile,
+                tier,
+                ticker,
+                entry,
+                target,
+                stop,
+                scan_price,
+                potential_gain_pct,
+                primary_catalyst,
+                detailed_analysis
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+ALERT_HISTORY_CACHE: List[Dict[str, Any]] = []
+
+
+def load_alert_history_cache() -> None:
+    """Load all existing history rows from SQLite into the in-process cache for fast access."""
+    conn = sqlite3.connect(ALERT_HISTORY_DB)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.execute(
+            """
+            SELECT
+                timestamp_iso,
+                date,
+                time,
+                profile,
+                tier,
+                ticker,
+                entry,
+                target,
+                stop,
+                scan_price,
+                potential_gain_pct,
+                primary_catalyst,
+                detailed_analysis
+            FROM alert_history
+            ORDER BY timestamp_iso ASC
+            """
+        )
+        ALERT_HISTORY_CACHE.extend(dict(r) for r in cur.fetchall())
+    finally:
+        conn.close()
+
+
+def fetch_alert_rows_by_ticker(ticker: str, limit: int = 30) -> List[Dict[str, Any]]:
+    conn = sqlite3.connect(ALERT_HISTORY_DB)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.execute(
+            """
+            SELECT
+                timestamp_iso,
+                date,
+                time,
+                profile,
+                tier,
+                ticker,
+                entry,
+                target,
+                stop,
+                scan_price,
+                potential_gain_pct,
+                primary_catalyst,
+                detailed_analysis
+            FROM alert_history
+            WHERE ticker = ?
+            ORDER BY timestamp_iso DESC
+            LIMIT ?
+            """,
+            (ticker, limit)
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        if rows:
+            return rows
+    finally:
+        conn.close()
+
+    # Fallback to cache (useful if DB write failed or during first writes)
+    cached = [
+        dict(r) for r in ALERT_HISTORY_CACHE
+        if (r.get("ticker") or "").upper() == ticker.upper()
+    ]
+    cached.sort(key=lambda r: r.get("timestamp_iso", ""), reverse=True)
+    return cached[:limit]
+
+
+def fetch_all_alert_rows() -> List[Dict[str, Any]]:
+    conn = sqlite3.connect(ALERT_HISTORY_DB)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.execute(
+            """
+            SELECT
+                timestamp_iso,
+                date,
+                time,
+                profile,
+                tier,
+                ticker,
+                entry
+            FROM alert_history
+            """
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        if rows:
+            return rows
+    finally:
+        conn.close()
+
+    # Fallback to cache
+    return [
+        {
+            "timestamp_iso": r.get("timestamp_iso"),
+            "date": r.get("date"),
+            "time": r.get("time"),
+            "profile": r.get("profile"),
+            "tier": r.get("tier"),
+            "ticker": r.get("ticker"),
+            "entry": r.get("entry")
+        }
+        for r in ALERT_HISTORY_CACHE
+    ]
+
+
+init_alert_history_db()
+load_alert_history_cache()
+
 # -------------------------------------------------------------
-#  SYSTEM PROMPTS (your original ones)
+#  SYSTEM PROMPTS
 # -------------------------------------------------------------
 
 # 1) Original Hedge Fund prompt (unchanged)
@@ -232,7 +440,7 @@ The JSON must have exactly these top-level keys:
 }
 """
 
-# News AI system prompt
+# News AI system prompt (emphasize decision factors)
 NEWS_SYSTEM_PROMPT = """
 You are an equity research analyst. 
 Your job is to read a single news item about one or more stocks and explain:
@@ -240,7 +448,8 @@ Your job is to read a single news item about one or more stocks and explain:
 1. What is happening (plain English, 2–3 sentences max).
 2. How traders might view this in the short term (bullish, bearish, mixed, or neutral).
 3. Whether the news is likely to have low, medium, or high price impact in the near term.
-4. Key risks and what could go wrong.
+4. The most important decision-making factors for traders (3 concise bullets).
+5. Key risks and what could go wrong.
 
 You are NOT giving personalized investment advice. 
 You are only describing how a typical market participant might interpret this headline.
@@ -252,10 +461,55 @@ You MUST respond with a single JSON object with these keys:
   "stance": "bullish | bearish | mixed | neutral",
   "impact_level": "low | medium | high",
   "summary": "short paragraph summary of the news",
-  "rationale": ["bullet point 1", "bullet point 2", "bullet point 3"],
-  "risk_notes": "1–2 sentence risk disclaimer",
+  "rationale": [
+    "factor 1: most important trading driver (catalyst, revenue, growth, guidance, etc.)",
+    "factor 2: positioning / sentiment / flow or competitive context",
+    "factor 3: key uncertainty or condition that really matters for traders"
+  ],
+  "risk_notes": "1–2 sentence risk disclaimer about volatility and uncertainty",
   "disclaimer": "This is not personalized financial advice."
 }
+
+Return ONLY this JSON object and nothing else.
+"""
+
+HISTORY_DEEP_DIVE_PROMPT = """
+You are an elite multi-factor trading desk assistant. Given context about a US-listed equity
+(recent alerts, trader profile, price snapshot, volume stats), produce a dense JSON advisory
+that helps a discretionary trader decide what to do right now. Blend technical, momentum, flow,
+and catalyst-driven reasoning. Be concise but actionable.
+
+Return ONLY a JSON object with this exact shape:
+{
+  "stance": "bullish | bearish | neutral",
+  "summary": "2-3 sentences synthesizing price action, catalysts, and risk/reward",
+  "catalysts": ["bullet about catalyst or news", "..."],
+  "levels": {
+    "immediate_support": "price + why",
+    "immediate_resistance": "price + why",
+    "support_zones": ["price + reason", "..."],
+    "resistance_zones": ["price + reason", "..."]
+  },
+  "momentum": [
+    {"indicator": "RSI", "reading": "value/condition", "bias": "bullish/bearish/neutral"},
+    {"indicator": "MACD", "reading": "...", "bias": "..."}
+  ],
+  "volume": {
+    "today_vs_avg": "describe current vs 10/30 day average volume",
+    "notes": "anything notable about participation or liquidity"
+  },
+  "action_plan": {
+    "bias": "Buy breakout / Short pop / Wait, etc.",
+    "entries": ["price zone and trigger"],
+    "targets": ["near-term target with rationale", "..."],
+    "stops": ["protective level and why"]
+  },
+  "future_view": "short paragraph giving next 1-2 week outlook (include Fibonacci/ADX/CCI references when useful)",
+  "risk_notes": "how it could fail, gaps, catalysts to monitor",
+  "disclaimer": "This is not personalized financial advice."
+}
+
+Always ground levels in the provided price snapshot. If data is missing, acknowledge it briefly.
 """
 
 # -------------------------------------------------------------
@@ -265,45 +519,47 @@ def extract_json_from_text(text: str) -> str:
     """Aggressively extracts the JSON object from noisy AI output."""
     if not isinstance(text, str):
         return "{}"
+
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     text = re.sub(r"```json\s*", "", text, flags=re.DOTALL)
     text = text.replace("```", "")
+
     match = re.search(r"\{.*\}", text.strip(), re.DOTALL)
     if match:
         return match.group(0)
+
     return text.strip()
 
-# -------------------------------------------------------------
-#  External news helpers
-# -------------------------------------------------------------
-def parse_benzinga_created(created_str: str) -> int:
-    if not created_str:
-        return 0
-    try:
-        dt = datetime.strptime(created_str, "%a, %d %b %Y %H:%M:%S %z")
-        return int(dt.timestamp())
-    except Exception:
-        return 0
 
+# -------------------------------------------------------------
+#  External news helpers (Finnhub + Benzinga)
+# -------------------------------------------------------------
 def fetch_finnhub_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
+    """Fetch general market news from Finnhub and normalize."""
     if not FINNHUB_API_KEY:
         return [], "finnhub_missing_key"
+
     url = "https://finnhub.io/api/v1/news"
-    params = {"category": "general", "token": FINNHUB_API_KEY}
+    params = {
+        "category": "general",
+        "token": FINNHUB_API_KEY,
+    }
     try:
-        resp = requests.get(url, params=params, timeout=12)
+        resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
         raw_items = resp.json()
     except Exception as e:
         logging.error(f"Finnhub news error: {e}")
         return [], "finnhub_error"
+
     items: List[Dict[str, Any]] = []
     for it in raw_items[:limit]:
         ts = it.get("datetime") or 0
         related = it.get("related") or ""
         tickers = [x for x in related.split(",") if x]
+
         items.append({
-            "id": str(it.get("id") or f"finnhub_{ts}_{it.get('headline','')[:20]}"),
+            "id": str(it.get("id") or f"finnhub_{ts}_{it.get('headline', '')[:20]}"),
             "headline": it.get("headline") or "",
             "source": "Finnhub",
             "provider": it.get("source") or "",
@@ -314,9 +570,23 @@ def fetch_finnhub_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
         })
     return items, ""
 
+
+def parse_benzinga_created(created_str: str) -> int:
+    """Parse Benzinga's 'created' date string to Unix timestamp."""
+    if not created_str:
+        return 0
+    try:
+        dt = datetime.strptime(created_str, "%a, %d %b %Y %H:%M:%S %z")
+        return int(dt.timestamp())
+    except Exception:
+        return 0
+
+
 def fetch_benzinga_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
+    """Fetch latest Benzinga news (XML) and normalize."""
     if not BENZINGA_API_KEY:
         return [], "benzinga_missing_key"
+
     url = "https://api.benzinga.com/api/v2/news"
     params = {
         "token": BENZINGA_API_KEY,
@@ -325,12 +595,13 @@ def fetch_benzinga_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
         "date": date.today().strftime("%Y-%m-%d"),
     }
     try:
-        resp = requests.get(url, params=params, timeout=12)
+        resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
         xml_text = resp.text
     except Exception as e:
         logging.error(f"Benzinga HTTP error: {e}")
         return [], "benzinga_error"
+
     try:
         root = ET.fromstring(xml_text)
     except Exception as e:
@@ -339,13 +610,15 @@ def fetch_benzinga_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
 
     items: List[Dict[str, Any]] = []
     for item in root.findall("item")[:limit]:
-        news_id = (item.findtext("id") or "").strip()
+        news_id = item.findtext("id", "").strip()
         title = item.findtext("title", "") or ""
         created_str = item.findtext("created", "") or ""
         teaser = item.findtext("teaser", "") or ""
         body = item.findtext("body", "") or ""
         url_item = item.findtext("url", "") or ""
+
         ts = parse_benzinga_created(created_str)
+
         tickers: List[str] = []
         stocks_el = item.find("stocks")
         if stocks_el is not None:
@@ -353,7 +626,9 @@ def fetch_benzinga_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
                 name = s.findtext("name", "").strip()
                 if name:
                     tickers.append(name)
+
         summary = teaser or body or ""
+
         items.append({
             "id": news_id or f"benzinga_{ts}_{title[:20]}",
             "headline": title,
@@ -364,31 +639,99 @@ def fetch_benzinga_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
             "tickers": tickers,
             "published_ts": ts,
         })
+
     return items, ""
+
 
 # -------------------------------------------------------------
 #  Finnhub quote + price enrichment (NO FILTERING)
 # -------------------------------------------------------------
-def get_finnhub_quote(symbol: str) -> Optional[float]:
+def fetch_finnhub_quote_data(symbol: str) -> Dict[str, Any]:
+    """Fetch the full Finnhub quote payload for a ticker."""
     if not FINNHUB_API_KEY or not symbol:
-        return None
+        return {}
     url = "https://finnhub.io/api/v1/quote"
-    params = {"symbol": symbol.upper(), "token": FINNHUB_API_KEY}
+    params = {
+        "symbol": symbol.upper(),
+        "token": FINNHUB_API_KEY
+    }
     try:
-        resp = requests.get(url, params=params, timeout=6)
+        resp = requests.get(url, params=params, timeout=5)
         resp.raise_for_status()
         data = resp.json()
-        price = data.get("c")
-        if isinstance(price, (int, float)) and price > 0:
-            return float(price)
+        return data if isinstance(data, dict) else {}
     except Exception as e:
         logging.error(f"Finnhub quote error for {symbol}: {e}")
+    return {}
+
+
+def get_finnhub_quote(symbol: str) -> float:
+    """Compatibility helper: return only the current price."""
+    data = fetch_finnhub_quote_data(symbol)
+    price = data.get("c")
+    if isinstance(price, (int, float)) and price > 0:
+        return float(price)
     return None
 
+
+def get_finnhub_snapshot(symbol: str) -> Dict[str, Any]:
+    """Return expanded Finnhub context for a ticker (price + volume metrics)."""
+    if not FINNHUB_API_KEY or not symbol:
+        return {}
+
+    symbol = symbol.upper()
+    quote = fetch_finnhub_quote_data(symbol)
+
+    metrics = {}
+    metric_url = "https://finnhub.io/api/v1/stock/metric"
+    params = {"symbol": symbol, "metric": "all", "token": FINNHUB_API_KEY}
+    try:
+        resp = requests.get(metric_url, params=params, timeout=8)
+        resp.raise_for_status()
+        json_data = resp.json()
+        metrics = json_data.get("metric") or {}
+    except Exception as exc:
+        logging.warning(f"Finnhub metric fetch failed for {symbol}: {exc}")
+
+    volume_now = metrics.get("currentVolume") or metrics.get("volume")
+
+    snapshot = {
+        "symbol": symbol,
+        "current": quote.get("c"),
+        "open": quote.get("o"),
+        "high": quote.get("h"),
+        "low": quote.get("l"),
+        "previous_close": quote.get("pc"),
+        "change": quote.get("c") - quote.get("pc") if quote.get("c") and quote.get("pc") else None,
+        "change_pct": ((quote.get("c") - quote.get("pc")) / quote.get("pc") * 100.0) if quote.get("c") and quote.get("pc") else None,
+        "timestamp": quote.get("t"),
+        "avg_volume_10d": metrics.get("10DayAverageTradingVolume"),
+        "avg_volume_30d": metrics.get("30DayAverageTradingVolume"),
+        "volume": volume_now,
+        "market_cap": metrics.get("marketCapitalization"),
+        "beta": metrics.get("beta"),
+        "fifty_two_week_high": metrics.get("52WeekHigh"),
+        "fifty_two_week_low": metrics.get("52WeekLow"),
+        "atr": metrics.get("atr"),
+    }
+    return {k: v for k, v in snapshot.items() if v is not None}
+
+
 def enrich_scanner_with_realtime_prices(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Take the AI scanner JSON (SmallCap/MidCap/LargeCap) and:
+    - Try to fetch real-time prices from Finnhub for each ticker.
+    - NEVER filter or drop any ticker/alert.
+    - Attach RealTimePrice when available.
+    - Preserve the AI's original EntryPrice in AIEntryPrice.
+    - Override EntryPrice with the real-time price (if available).
+    - Recompute PotentialGainPercent using corrected EntryPrice & TargetPrice.
+    """
     if not FINNHUB_API_KEY:
         return data
+
     buckets = ["SmallCap", "MidCap", "LargeCap"]
+
     tickers = set()
     for b in buckets:
         for alert in data.get(b, []) or []:
@@ -396,159 +739,292 @@ def enrich_scanner_with_realtime_prices(data: Dict[str, Any]) -> Dict[str, Any]:
             if t:
                 alert["Ticker"] = t
                 tickers.add(t)
+
     quotes: Dict[str, float] = {}
     for t in tickers:
-        p = get_finnhub_quote(t)
-        if p:
-            quotes[t] = p
+        price = get_finnhub_quote(t)
+        if price:
+            quotes[t] = price
+
     for b in buckets:
-        for alert in data.get(b, []) or []:
-            t = alert.get("Ticker")
-            rt = quotes.get(t)
-            if rt is None:
+        alerts = data.get(b, []) or []
+        for alert in alerts:
+            ticker = (alert.get("Ticker") or "").strip().upper()
+            if not ticker:
                 continue
-            alert["RealTimePrice"] = round(rt, 2)
-            # Preserve AI entry if provided
-            try:
-                ai_entry = float(alert.get("EntryPrice"))
+
+            rt_price = quotes.get(ticker)
+            if rt_price is None:
+                continue
+
+            alert["RealTimePrice"] = round(rt_price, 2)
+
+            def _to_float(val):
+                try:
+                    return float(val)
+                except Exception:
+                    return None
+
+            ai_entry = _to_float(alert.get("EntryPrice"))
+            if ai_entry is not None:
                 alert["AIEntryPrice"] = ai_entry
-            except Exception:
-                ai_entry = None
-            # Override EntryPrice with real-time
-            alert["EntryPrice"] = round(rt, 2)
-            # Recompute gain if target is numeric
-            try:
-                target = float(alert.get("TargetPrice"))
-                gain = (target - rt) / rt * 100.0
-                alert["PotentialGainPercent"] = round(gain, 2)
-            except Exception:
-                pass
+
+            alert["EntryPrice"] = round(rt_price, 2)
+
+            target = _to_float(alert.get("TargetPrice"))
+            if target is not None and rt_price > 0:
+                gain_pct = (target - rt_price) / rt_price * 100.0
+                alert["PotentialGainPercent"] = round(gain_pct, 2)
+
+        data[b] = alerts
+
     return data
 
+
 # -------------------------------------------------------------
-#  NEW: Coerce AI payload into proper {Ticker,...} objects
+#  Alert history recording and retrieval
 # -------------------------------------------------------------
-def coerce_scanner_payload(raw: Any) -> Dict[str, Any]:
-    """
-    Accepts whatever the AI sent and tries to turn it into:
-    { "SmallCap":[{...}], "MidCap":[{...}], "LargeCap":[{...}] }
+def _safe_float(val):
+    try:
+        return float(val)
+    except Exception:
+        return None
 
-    - Keeps existing dict objects as-is.
-    - Converts numbered string lines like "1. Microsoft (MSFT)..."
-      into full alert dicts with at least Ticker + DetailedAnalysis.
-    - Ignores descriptive lines (e.g. "Small-cap companies with ...").
-    """
-    buckets = ["SmallCap", "MidCap", "LargeCap"]
-    result = {b: [] for b in buckets}
 
-    if not isinstance(raw, dict):
-        return result
+def record_alert_history(profile: str, data: Dict[str, Any]) -> None:
+    """Record snapshot of all alerts from a scan into persistent SQLite history."""
+    now = datetime.utcnow()
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H:%M")
+    timestamp_iso = now.isoformat() + "Z"
+    rows_to_insert: List[Tuple[Any, ...]] = []
 
-    for bucket in buckets:
-        alerts = raw.get(bucket, []) or []
-        normalized: List[Dict[str, Any]] = []
-
-        for item in alerts:
-            # Already well-structured
-            if isinstance(item, dict):
-                normalized.append(item)
+    for tier in ["SmallCap", "MidCap", "LargeCap"]:
+        for alert in data.get(tier, []) or []:
+            ticker = (alert.get("Ticker") or "").strip().upper()
+            if not ticker:
                 continue
 
-            # We only try to parse string lines
-            if isinstance(item, str):
-                # Only lines that look like "1. Something..."
-                if not re.match(r"^\s*\d+\.", item):
-                    continue
-                # Try to extract ticker in parentheses (MSFT), (NVDA), etc.
-                m = re.search(r"\(([A-Z\.]{1,6})\)", item)
-                if not m:
-                    continue
-                ticker = m.group(1).strip().upper()
-                normalized.append({
-                    "Ticker": ticker,
-                    "EntryPrice": None,
-                    "TargetPrice": None,
-                    "StopPrice": None,
-                    "PotentialGainPercent": None,
-                    "PrimaryCatalyst": "Example candidate from AI without numeric levels.",
-                    "DetailedAnalysis": [item]
-                })
+            entry = _safe_float(alert.get("EntryPrice"))
+            target = _safe_float(alert.get("TargetPrice"))
+            stop = _safe_float(alert.get("StopPrice"))
+            rt_price = _safe_float(alert.get("RealTimePrice"))
+            pot_gain = _safe_float(alert.get("PotentialGainPercent"))
 
-        result[bucket] = normalized
-
-    return result
-
-# -------------------------------------------------------------
-#  Local fallbacks (no external AI)
-# -------------------------------------------------------------
-def fallback_scan() -> Dict[str, Any]:
-    """Return a small, valid scan payload when Perplexity fails, so UI remains usable."""
-    sample = {
-        "SmallCap": [],
-        "MidCap": [
-            {
-                "Ticker": "RWAY",
-                "EntryPrice": 9.89,
-                "TargetPrice": 11.03,
-                "StopPrice": 10.22,
-                "PotentialGainPercent": 7.61,
-                "PrimaryCatalyst": "None / purely technical",
-                "DetailedAnalysis": [
-                    "Momentum breakout over recent resistance, multi-timeframe alignment.",
-                    "Elevated relative volume at/after trigger; constructive pullback behavior.",
-                    "Stop under $10.22; invalidation on close back into prior range."
-                ]
+            rec = {
+                "timestamp_iso": timestamp_iso,
+                "date": date_str,
+                "time": time_str,
+                "profile": profile,
+                "tier": tier,
+                "ticker": ticker,
+                "entry": entry,
+                "target": target,
+                "stop": stop,
+                "scan_price": rt_price,
+                "potential_gain_pct": pot_gain,
+                "primary_catalyst": alert.get("PrimaryCatalyst") or "",
+                "detailed_analysis": alert.get("DetailedAnalysis") or ""
             }
-        ],
-        "LargeCap": [
-            {
-                "Ticker": "AA",
-                "EntryPrice": 37.32,
-                "TargetPrice": 56.20,
-                "StopPrice": 34.10,
-                "PotentialGainPercent": 50.59,
-                "PrimaryCatalyst": "Sector momentum / aluminum pricing strength",
-                "DetailedAnalysis": [
-                    "Trend resumption after sideways base; holds key moving averages.",
-                    "Improving commodity backdrop; flow supportive versus sector ETF.",
-                    "Stop below base; maintain position sizing per risk."
-                ]
+            ALERT_HISTORY_CACHE.append(rec)
+            rows_to_insert.append(
+                (
+                    rec["timestamp_iso"],
+                    rec["date"],
+                    rec["time"],
+                    rec["profile"],
+                    rec["tier"],
+                    rec["ticker"],
+                    rec["entry"],
+                    rec["target"],
+                    rec["stop"],
+                    rec["scan_price"],
+                    rec["potential_gain_pct"],
+                    rec["primary_catalyst"],
+                    rec["detailed_analysis"]
+                )
+            )
+
+    insert_alert_rows(rows_to_insert)
+
+
+@app.route("/api/history", methods=["GET"])
+@auth.login_required
+def api_history():
+    """
+    Get history for a given ticker.
+    Query param: ?ticker=TSLA
+    Returns past alerts + current price and % from original entry.
+    """
+    ticker = (request.args.get("ticker") or "").strip().upper()
+    if not ticker:
+        return jsonify({"success": True, "data": []})
+
+    records = fetch_alert_rows_by_ticker(ticker)
+    if not records:
+        return jsonify({"success": True, "data": []})
+
+    current_price = get_finnhub_quote(ticker)
+    for r in records:
+        r["profile_key"] = r.get("profile")
+        r["profile_label"] = format_profile_label(r.get("profile"))
+        entry = r.get("entry")
+        if current_price is not None and entry:
+            pct = (current_price - entry) / entry * 100.0
+            r["current_price"] = round(current_price, 2)
+            r["current_change_pct"] = round(pct, 2)
+        else:
+            r["current_price"] = None
+            r["current_change_pct"] = None
+
+    return jsonify({"success": True, "data": records})
+
+
+@app.route("/api/history/summary", methods=["GET"])
+@auth.login_required
+def api_history_summary():
+    """
+    Aggregate history by ticker for the History tab.
+    Returns per-ticker stats and current performance from last entry.
+    """
+    alert_rows = fetch_all_alert_rows()
+    if not alert_rows:
+        return jsonify({"success": True, "data": []})
+
+    agg: Dict[str, Dict[str, Any]] = {}
+
+    for r in alert_rows:
+        ticker = r.get("ticker")
+        if not ticker:
+            continue
+
+        ts = r.get("timestamp_iso", "")
+        entry = r.get("entry")
+
+        if ticker not in agg:
+            agg[ticker] = {
+                "ticker": ticker,
+                "alerts": 0,
+                "first_timestamp": ts,
+                "last_timestamp": ts,
+                "first_date": r.get("date"),
+                "last_date": r.get("date"),
+                "last_profile": format_profile_label(r.get("profile")),
+                "last_profile_key": r.get("profile"),
+                "last_tier": r.get("tier"),
+                "last_entry": entry
             }
-        ]
-    }
+
+        a = agg[ticker]
+        a["alerts"] += 1
+
+        if ts < a["first_timestamp"]:
+            a["first_timestamp"] = ts
+            a["first_date"] = r.get("date")
+
+        if ts > a["last_timestamp"]:
+            a["last_timestamp"] = ts
+            a["last_date"] = r.get("date")
+            a["last_profile"] = format_profile_label(r.get("profile"))
+            a["last_profile_key"] = r.get("profile")
+            a["last_tier"] = r.get("tier")
+            a["last_entry"] = entry
+
+    # Fetch current prices and compute performance from last entry
+    for ticker, a in agg.items():
+        cp = get_finnhub_quote(ticker)
+        entry = a.get("last_entry")
+        if cp is not None and entry:
+            pct = (cp - entry) / entry * 100.0
+            a["current_price"] = round(cp, 2)
+            a["current_change_pct"] = round(pct, 2)
+        else:
+            a["current_price"] = None
+            a["current_change_pct"] = None
+
+        if "last_profile_key" in a:
+            a["last_profile"] = format_profile_label(a.get("last_profile_key"))
+
+        # clean internal timestamps
+        del a["first_timestamp"]
+        del a["last_timestamp"]
+
+    items = list(agg.values())
+    # Sort: best performers (highest % from last entry) first,
+    # those with no current_change_pct go to bottom.
+    items.sort(key=lambda x: (x["current_change_pct"] is None, -(x["current_change_pct"] or 0.0)))
+
+    return jsonify({"success": True, "data": items})
+
+
+@app.route("/api/history/deep-dive", methods=["POST"])
+@auth.login_required
+def api_history_deep_dive():
+    if not pplx_client:
+        return jsonify({"success": False, "error": "Perplexity API key not configured."}), 503
+
     try:
-        return enrich_scanner_with_realtime_prices(sample)
+        payload = request.get_json(force=True) or {}
     except Exception:
-        return sample
+        return jsonify({"success": False, "error": "Invalid JSON body."}), 400
 
-def basic_news_analysis(article: Dict[str, Any], symbol: Optional[str]) -> Dict[str, Any]:
-    headline = (article or {}).get("headline", "")
-    summary = (article or {}).get("summary", "")
-    txt = f"{headline} {summary}".lower()
-    stance = "neutral"
-    impact = "medium"
-    if any(w in txt for w in ["beats", "beat estimates", "raises guidance", "approval", "partner", "acquire", "acquisition", "buyback"]):
-        stance = "bullish"
-        impact = "high"
-    elif any(w in txt for w in ["misses", "miss", "cut guidance", "guidance cut", "lawsuit", "probe", "sec charges", "recall", "layoff"]):
-        stance = "bearish"
-        impact = "high"
-    elif any(w in txt for w in ["mixed", "volatile", "uncertain"]):
-        stance = "mixed"
-        impact = "medium"
+    ticker = (payload.get("ticker") or "").strip().upper()
+    if not ticker:
+        return jsonify({"success": False, "error": "Ticker is required."}), 400
 
-    return {
-        "stance": stance,
-        "impact_level": impact,
-        "summary": summary or headline,
-        "rationale": [
-            "Heuristic local analysis used because external AI was unavailable.",
-            "Signal derived from keywords in headline/summary (approximate).",
-            "Treat as a starting point only; read the full article for nuance."
-        ],
-        "risk_notes": "Trading around catalysts is volatile and can gap; manage size and stops.",
-        "disclaimer": "This is not personalized financial advice."
-    }
+    snapshot = get_finnhub_snapshot(ticker)
+    recent_history = fetch_alert_rows_by_ticker(ticker, limit=8)
+
+    history_lines = []
+    for row in recent_history:
+        history_lines.append(
+            f"{row.get('date')} {row.get('time')} | {format_profile_label(row.get('profile'))} | "
+            f"{row.get('tier')} | entry {row.get('entry')} | target {row.get('target')} | "
+            f"potential {row.get('potential_gain_pct')}%"
+        )
+
+    context_blob = json.dumps(
+        {
+            "ticker": ticker,
+            "snapshot": snapshot,
+            "recent_alerts": history_lines,
+        },
+        ensure_ascii=False
+    )
+
+    user_prompt = (
+        "Use the following structured context to analyze a stock:\n\n"
+        f"{context_blob}\n\n"
+        "Generate the requested JSON fields strictly per the system prompt."
+    )
+
+    try:
+        resp = pplx_client.chat.completions.create(
+            model="sonar-pro",
+            messages=[
+                {"role": "system", "content": HISTORY_DEEP_DIVE_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            extra_body={
+                "search_recency_filter": "day"
+            }
+        )
+        raw = resp.choices[0].message.content
+        json_str = extract_json_from_text(raw)
+        ai_data = json.loads(json_str)
+    except Exception as exc:
+        logging.error(f"History deep dive error for {ticker}: {type(exc).__name__} - {exc}")
+        return jsonify({"success": False, "error": "AI analysis failed. Check server logs."}), 500
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "ticker": ticker,
+            "snapshot": snapshot,
+            "analysis": ai_data
+        }
+    })
+
 
 # -------------------------------------------------------------
 #  ROUTES
@@ -556,11 +1032,11 @@ def basic_news_analysis(article: Dict[str, Any], symbol: Optional[str]) -> Dict[
 @app.route("/api/news/headlines", methods=["GET"])
 @auth.login_required
 def api_news_headlines():
-    limit_param = request.args.get("limit", "60")
+    limit_param = request.args.get("limit", "50")
     try:
         limit = max(1, min(int(limit_param), 200))
     except ValueError:
-        limit = 60
+        limit = 50
 
     all_items: List[Dict[str, Any]] = []
     errors: List[str] = []
@@ -579,11 +1055,22 @@ def api_news_headlines():
     if len(all_items) > limit:
         all_items = all_items[:limit]
 
-    return jsonify({"success": True, "data": all_items, "errors": errors})
+    return jsonify({
+        "success": True,
+        "data": all_items,
+        "errors": errors
+    })
+
 
 @app.route("/api/news/analysis", methods=["POST"])
 @auth.login_required
 def api_news_analysis():
+    if not pplx_client:
+        return jsonify({
+            "success": False,
+            "error": "Perplexity API key not configured."
+        }), 503
+
     try:
         payload = request.get_json(force=True)
     except Exception:
@@ -592,123 +1079,180 @@ def api_news_analysis():
     article = payload.get("article") or {}
     symbol = payload.get("symbol")
 
-    # Try Perplexity first
-    if pplx_client:
-        try:
-            headline = article.get("headline", "")
-            summary = article.get("summary", "")
-            provider = article.get("provider", "") or article.get("source", "")
-            url = article.get("url", "")
-            tickers = article.get("tickers") or []
-            tickers_str = ", ".join(tickers)
+    headline = article.get("headline", "")
+    summary = article.get("summary", "")
+    provider = article.get("provider", "") or article.get("source", "")
+    src = article.get("source", "")
+    url = article.get("url", "")
+    tickers = article.get("tickers") or []
+    tickers_str = ", ".join(tickers)
 
-            user_prompt = (
-                "Here is a single news item about one or more stocks.\n\n"
-                f"Headline: {headline}\n"
-                f"Source/Provider: {provider}\n"
-                f"Tickers: {tickers_str}\n"
-                f"Summary: {summary}\n"
-                f"URL: {url}\n"
-                f"Primary symbol of interest: {symbol or 'N/A'}\n\n"
-                "Return ONLY the JSON object described in the system prompt."
-            )
+    user_prompt = (
+        "Here is a single news item about one or more stocks.\n\n"
+        f"Headline: {headline}\n"
+        f"Source/Provider: {provider or src}\n"
+        f"Tickers: {tickers_str}\n"
+        f"Summary: {summary}\n"
+        f"URL: {url}\n"
+        f"Primary symbol of interest: {symbol or 'N/A'}\n\n"
+        "Return ONLY the JSON object described in the system prompt."
+    )
 
-            resp = pplx_client.chat.completions.create(
-                model="sonar-pro",
-                messages=[
-                    {"role": "system", "content": NEWS_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                extra_body={"search_recency_filter": "day"},
-            )
-            raw = resp.choices[0].message.content
-            json_str = extract_json_from_text(raw)
-            data = json.loads(json_str)
-            data.setdefault("stance", "neutral")
-            data.setdefault("impact_level", "medium")
-            data.setdefault("summary", summary or headline)
-            data.setdefault("rationale", [])
-            data.setdefault("risk_notes", "Trading around news involves volatility and gap risk.")
-            data.setdefault("disclaimer", "This is not personalized financial advice.")
-            return jsonify({"success": True, "data": data})
-        except Exception as e:
-            logging.error(f"News analysis (AI) error: {type(e).__name__} - {e}")
+    try:
+        resp = pplx_client.chat.completions.create(
+            model="sonar-pro",
+            messages=[
+                {"role": "system", "content": NEWS_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            extra_body={
+                "search_recency_filter": "day"
+            }
+        )
+        raw = resp.choices[0].message.content
+        json_str = extract_json_from_text(raw)
+        data = json.loads(json_str)
 
-    # Fallback local analysis
-    data = basic_news_analysis(article, symbol)
-    return jsonify({"success": True, "data": data, "warning": "fallback_local"})
+        data.setdefault("stance", "neutral")
+        data.setdefault("impact_level", "medium")
+        data.setdefault("summary", summary or headline)
+        data.setdefault(
+            "rationale",
+            []
+        )
+        data.setdefault(
+            "risk_notes",
+            "Trading around news involves volatility, gaps, and uncertainty. Position sizing and risk management are critical."
+        )
+        data.setdefault("disclaimer", "This is not personalized financial advice.")
+
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        logging.error(f"News analysis error: {type(e).__name__} - {e}")
+        return jsonify({
+            "success": False,
+            "error": "AI analysis failed. Check server logs."
+        }), 500
+
 
 @app.route("/api/scan", methods=["POST"])
 @auth.login_required
 def run_scanner_api():
     """
-    Scanner endpoint with graceful fallback:
-    - If Perplexity fails OR sends weird bullet-list JSON, we coerce it
-      or fall back to a small local example so the UI always has something.
+    Scanner endpoint:
+    - profile: 'hedge_fund' | 'pro_trader' | 'catalyst' (JSON body)
+    - Uses Perplexity for raw ideas, then:
+        * Enriches prices with Finnhub (EntryPrice & PotentialGainPercent),
+        * NEVER filters / removes any ideas.
+        * Records a snapshot into SQLite-based alert history for later reference.
     """
-    raw = ""
-    profile = "hedge_fund"
+    if not pplx_client:
+        return jsonify({
+            "success": False,
+            "error": "PPLX_API_KEY is missing or invalid. Cannot connect to Perplexity."
+        }), 503
+
+    raw_json_string = ""
+
     try:
         payload = request.get_json(silent=True) or {}
         profile = (payload.get("profile") or "hedge_fund").lower()
-    except Exception:
-        pass
 
-    system_prompt = HEDGE_FUND_PROMPT
-    if profile == "pro_trader":
-        system_prompt = PRO_TRADER_PROMPT
-    elif profile == "catalyst":
-        system_prompt = CATALYST_HUNTER_PROMPT
+        if profile == "pro_trader":
+            system_prompt = PRO_TRADER_PROMPT
+        elif profile == "catalyst":
+            system_prompt = CATALYST_HUNTER_PROMPT
+        else:
+            system_prompt = HEDGE_FUND_PROMPT
+            profile = "hedge_fund"
 
-    # Try Perplexity first
-    if pplx_client:
-        try:
-            logging.info(f"Perplexity scan start: profile={profile}")
-            response = pplx_client.chat.completions.create(
-                model="sonar-pro",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": (
+        logging.info(f"Sending request to Perplexity API for scanner profile: {profile}")
+
+        response = pplx_client.chat.completions.create(
+            model="sonar-pro",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": (
                         "Begin scan now. For each of SmallCap, MidCap, and LargeCap, "
                         "try to return between 5 and 10 candidates that satisfy the rules in the system prompt.\n"
-                        "IMPORTANT: Respond ONLY with a single JSON object:\n"
-                        "{\"SmallCap\": [...], \"MidCap\": [...], \"LargeCap\": [...]}."
-                    )},
-                ],
-                extra_body={"search_recency_filter": "day"},
-            )
-            raw = response.choices[0].message.content or ""
-            json_string = extract_json_from_text(raw)
+                        "Only exclude names if they clearly fail the risk/reward or catalyst conditions.\n"
+                        "Rank the candidates in each bucket from strongest to weakest based on their risk/reward "
+                        "and quality of setup (strongest at the top).\n\n"
+                        "IMPORTANT: Your ENTIRE reply must be ONE JSON object only:\n"
+                        "{\"SmallCap\": [...], \"MidCap\": [...], \"LargeCap\": [...]} \n"
+                        "Do NOT include any explanation, commentary, or markdown outside of this JSON."
+                    )
+                }
+            ],
+            extra_body={
+                "search_recency_filter": "day"
+            }
+        )
+
+        raw_json_string = response.choices[0].message.content or ""
+        logging.info(f"RAW SCANNER OUTPUT (truncated): {repr(raw_json_string[:500])}")
+
+        json_string = extract_json_from_text(raw_json_string)
+        logging.info(f"EXTRACTED JSON CANDIDATE (truncated): {repr(json_string[:500])}")
+
+        data = None
+
+        try:
+            data = json.loads(json_string)
+        except JSONDecodeError as e:
+            logging.error(f"json.loads failed: {e}")
             try:
-                data = json.loads(json_string)
-            except JSONDecodeError:
                 data = ast.literal_eval(json_string)
+            except Exception as e2:
+                logging.error(f"ast.literal_eval also failed: {e2}")
 
-            # 🔧 NEW: coerce weird bullet-list style output into objects
-            data = coerce_scanner_payload(data)
+        if not isinstance(data, dict):
+            logging.error("Scanner output could not be parsed into a dict; returning empty structure.")
+            empty_data = {"SmallCap": [], "MidCap": [], "LargeCap": []}
+            return jsonify({
+                "success": True,
+                "data": empty_data,
+                "warning": "AI output malformed; returned empty scan result."
+            })
 
-            try:
-                data = enrich_scanner_with_realtime_prices(data)
-            except Exception as e:
-                logging.error(f"Price enrichment failed: {e}")
+        for key in ["SmallCap", "MidCap", "LargeCap"]:
+            data.setdefault(key, [])
 
-            return jsonify({"success": True, "data": data})
+        try:
+            data = enrich_scanner_with_realtime_prices(data)
         except Exception as e:
-            logging.error(f"Scanner (AI) error: {type(e).__name__} - {e}")
-            logging.info(f"RAW AI OUTPUT (truncated): {repr(raw[:400])}")
+            logging.error(f"Price enrichment failed: {e}")
 
-    # Fallback path (no 500 to the browser)
-    data = fallback_scan()
-    return jsonify({"success": True, "data": data, "warning": "fallback_local"})
+        try:
+            record_alert_history(profile, data)
+        except Exception as e:
+            logging.error(f"Failed to record alert history: {e}")
+
+        return jsonify({"success": True, "data": data})
+
+    except Exception as e:
+        logging.error(f"Scanner error: {type(e).__name__} - {e}")
+        logging.error(f"RAW AI OUTPUT RECEIVED: {repr(raw_json_string)}")
+
+        return jsonify({
+            "success": False,
+            "error": "Scanner failed due to server error.",
+            "data": {"SmallCap": [], "MidCap": [], "LargeCap": []}
+        }), 500
+
 
 @app.route("/")
 @auth.login_required
 def dashboard_view():
     return render_template("index.html")
 
+
 @app.errorhandler(401)
 def unauthorized(error):
     return 'Login Required: Please enter your credentials to access the Black Box Scanner.', 401
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

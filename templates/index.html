@@ -1,680 +1,1976 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Black Box Scanner | Pro Personal</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+    <meta charset="UTF-8">
+    <title>Black Box Scanner | Pro Trader Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <style>
-    /* Theme tokens (same structure) */
-    :root {
-      --bg-dark: #020617;
-      --bg-elevated-dark: #0b1220;
-      --bg-card-dark: #0a1020;
-      --border-subtle-dark: #1f2937;
-      --accent-dark: #38bdf8;
-      --accent-soft-dark: rgba(56, 189, 248, 0.16);
-      --accent-strong-dark: #22d3ee;
-      --text-primary-dark: #f9fafb;
-      --text-secondary-dark: #e5e7eb;
-      --text-muted-dark: #9ca3af;
-      --text-soft-dark: #94a3b8;
-      --danger-dark: #f97373;
-      --success-dark: #4ade80;
-      --warning-dark: #fbbf24;
+    <!-- Bootstrap 5 -->
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+    >
 
-      --bg-light: #f6f7fb;
-      --bg-elevated-light: #ffffff;
-      --bg-card-light: #ffffff;
-      --border-subtle-light: #e5e7eb;
-      --accent-light: #2563eb;
-      --accent-soft-light: rgba(37, 99, 235, 0.10);
-      --accent-strong-light: #1d4ed8;
-      --text-primary-light: #0b1220;
-      --text-secondary-light: #0b1220;
-      --text-muted-light: #475569;
-      --text-soft-light: #64748b;
-      --danger-light: #b91c1c;
-      --success-light: #15803d;
-      --warning-light: #b45309;
-    }
+    <style>
+        :root {
+            --bg-main: #050816;
+            --bg-card: #101827;
+            --bg-card-soft: #121826;
+            --border-subtle: #253244;
+            --text-main: #f9fafb;
+            --text-muted-soft: #9ca3af;
+            --accent-primary: #38bdf8;
+            --accent-secondary: #a855f7;
+            --accent-danger: #f97373;
+            --accent-success: #4ade80;
+        }
 
-    body.theme-dark{
-      --bg: var(--bg-dark);
-      --bg-elevated: var(--bg-elevated-dark);
-      --bg-card: var(--bg-card-dark);
-      --border-subtle: var(--border-subtle-dark);
-      --accent: var(--accent-dark);
-      --accent-soft: var(--accent-soft-dark);
-      --accent-strong: var(--accent-strong-dark);
-      --text-primary: var(--text-primary-dark);
-      --text-secondary: var(--text-secondary-dark);
-      --text-muted: var(--text-muted-dark);
-      --text-soft: var(--text-soft-dark);
-      --danger: var(--danger-dark);
-      --success: var(--success-dark);
-      --warning: var(--warning-dark);
-      background:
-        radial-gradient(circle at 10% -10%, #0f172a 0, #020617 40%, #000 100%),
-        var(--bg);
-      color: var(--text-primary);
-    }
+        body {
+            background: radial-gradient(circle at top, #0b1220, #020617 55%);
+            color: var(--text-main);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: 1.05rem;
+            line-height: 1.6;
+        }
 
-    body.theme-light{
-      --bg: var(--bg-light);
-      --bg-elevated: var(--bg-elevated-light);
-      --bg-card: var(--bg-card-light);
-      --border-subtle: var(--border-subtle-light);
-      --accent: var(--accent-light);
-      --accent-soft: var(--accent-soft-light);
-      --accent-strong: var(--accent-strong-light);
-      --text-primary: var(--text-primary-light);
-      --text-secondary: var(--text-secondary-light);
-      --text-muted: var(--text-muted-light);
-      --text-soft: var(--text-soft-light);
-      --danger: var(--danger-light);
-      --success: var(--success-light);
-      --warning: var(--warning-light);
-      background: linear-gradient(180deg, #ffffff, var(--bg));
-      color: var(--text-primary);
-    }
+        body.light-mode {
+            --bg-main: #f3f4f6;
+            --bg-card: #ffffff;
+            --bg-card-soft: #f9fafb;
+            --border-subtle: #e5e7eb;
+            --text-main: #111827;
+            --text-muted-soft: #6b7280;
+            --accent-primary: #2563eb;
+            --accent-secondary: #8b5cf6;
+            --accent-danger: #dc2626;
+            --accent-success: #16a34a;
+            background: linear-gradient(180deg, #f9fafb 0%, #e5e7eb 60%, #d1d5db 100%);
+        }
 
-    body{
-      font-family: system-ui,-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-      font-size: 17px; /* bigger base */
-      line-height: 1.55;
-      min-height: 100vh;
-    }
-    @media (max-width: 768px){
-      body{ font-size: 16px; }
-    }
+        .text-muted {
+            color: var(--text-muted-soft) !important;
+        }
 
-    .app-shell{ max-width:1280px; margin:0 auto; padding:1.25rem 1rem 2rem; }
+        .app-shell {
+            max-width: 1240px;
+            margin: 0 auto;
+            padding: 1rem 1rem 2rem;
+        }
 
-    .bbx-header{ display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; margin-bottom:.75rem; }
-    .bbx-title{ font-size:2.1rem; font-weight:800; letter-spacing:.02em; color:var(--text-secondary); }
-    .bbx-subtitle{ font-size:.95rem; color:var(--text-soft); }
-    .bbx-badge{ font-size:.85rem; letter-spacing:.08em; text-transform:uppercase; font-weight:700; border-radius:999px; padding:.4rem .85rem; background:linear-gradient(135deg,#f97316,#ef4444); color:#fff; }
+        .card {
+            background-color: var(--bg-card);
+            border-color: var(--border-subtle);
+            border-radius: 0.9rem;
+            color: var(--text-main);
+            box-shadow: 0 15px 35px rgba(2, 6, 23, 0.45);
+        }
 
-    .header-right{ display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; }
-    .time-pill{ font-size:.85rem; padding:.25rem .6rem; border-radius:999px; border:1px solid var(--border-subtle); color:var(--text-soft); background:var(--bg-elevated); }
+        .card-header {
+            background-color: rgba(15, 23, 42, 0.9);
+            border-bottom-color: var(--border-subtle);
+            color: var(--text-main);
+        }
 
-    .theme-btn{ border:1px solid var(--border-subtle); background:var(--bg-elevated); color:var(--text-soft); border-radius:999px; padding:.35rem .8rem; font-size:.9rem; }
+        body.light-mode .card-header {
+            background-color: #f3f4f6;
+            color: var(--text-main);
+        }
 
-    .bbx-tabs{ display:inline-flex; border:1px solid var(--border-subtle); border-radius:999px; padding:.25rem; background:var(--bg-elevated); margin-bottom:1rem; }
-    .bbx-tab-btn{ border:none; background:transparent; color:var(--text-soft); padding:.4rem 1rem; border-radius:999px; font-weight:600; }
-    .bbx-tab-btn.active{ background:var(--accent-soft); color:var(--accent-strong); }
+        .card-body {
+            background-color: var(--bg-card);
+            color: var(--text-main);
+        }
 
-    .profile-row{ display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; margin-bottom:1rem; }
-    .profile-pills{ display:inline-flex; gap:.4rem; border:1px solid var(--border-subtle); border-radius:999px; padding:.25rem; background:var(--bg-elevated); }
-    .profile-pill{ border:none; background:transparent; color:var(--text-soft); border-radius:999px; padding:.45rem .95rem; font-weight:600; }
-    .profile-pill.active{ background:var(--accent-soft); color:var(--accent-strong); }
-    .run-btn{ border:none; border-radius:999px; padding:.6rem 1.3rem; font-weight:700; background:linear-gradient(135deg,#22c55e,#4ade80); color:#081018; }
+        body.light-mode .card,
+        body.light-mode .card-body {
+            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+        }
 
-    .scanner-card{ background:var(--bg-card); border:1px solid var(--border-subtle); border-radius:1rem; padding:1rem; height:100%; }
-    .scanner-card-title{ font-size:1rem; font-weight:700; color:var(--text-secondary); }
-    .scanner-chip{ font-size:.75rem; border:1px solid var(--border-subtle); color:var(--text-soft); padding:.1rem .5rem; border-radius:999px; }
-    .scanner-table{ width:100%; border-collapse:collapse; }
-    .scanner-table thead th{ font-size:.78rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-soft); border-bottom:1px solid var(--border-subtle); padding-bottom:.35rem; }
-    .scanner-table tbody td{ padding:.5rem .15rem; font-size:1rem; color:var(--text-secondary); }
-    .scanner-empty{ color:var(--text-muted); padding:.4rem 0; }
-    .scanner-ticker{ color:var(--accent-strong); font-weight:800; }
-    .scanner-rt{ font-size:.8rem; color:var(--text-soft); }
-    .scanner-gain{ color:var(--success); font-weight:800; }
+        .pill {
+            border-radius: 999px;
+            padding: 0.2rem 0.7rem;
+            font-size: 0.72rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
 
-    .analysis-shell{ background:var(--bg-card); border:1px solid var(--border-subtle); border-radius:1rem; padding:1rem; }
-    .analysis-title{ font-size:1.1rem; font-weight:800; color:var(--text-secondary); }
-    .analysis-section-title{ font-size:1rem; font-weight:800; color:var(--text-secondary); }
-    .analysis-bullets{ padding-left:1.1rem; }
-    .analysis-value-main{ font-size:1.2rem; font-weight:800; }
-    .analysis-value-gain{ font-size:1.2rem; font-weight:900; color:var(--success); }
-    .analysis-value-stop{ font-size:1.1rem; font-weight:800; color:var(--danger); }
-    .analysis-label{ font-size:.85rem; color:var(--text-soft); }
+        .pill-hedge {
+            background: rgba(248, 250, 252, 0.06);
+            border: 1px solid rgba(148, 163, 184, 0.6);
+        }
 
-    .news-card{ background:var(--bg-card); border:1px solid var(--border-subtle); border-radius:1rem; padding:1rem; }
-    .news-card-title{ font-size:1rem; font-weight:800; color:var(--text-secondary); }
-    .news-headline{ font-weight:700; color:var(--text-secondary); }
-    .news-meta{ font-size:.85rem; color:var(--text-soft); }
-    .topic-pill{ border:1px solid var(--border-subtle); background:var(--bg-elevated); color:var(--text-soft); border-radius:999px; padding:.25rem .7rem; margin:.1rem; }
-    .topic-pill.active{ background:var(--accent-soft); color:var(--accent-strong); }
-    .watchlist-chip{ background:var(--accent-soft); color:var(--accent-strong); border-radius:999px; padding:.2rem .6rem; font-size:.9rem; margin:.15rem .25rem .15rem 0; display:inline-flex; gap:.3rem; }
-    .btn-xs{ padding:.15rem .5rem; font-size:.8rem; border-radius:999px; }
-  </style>
+        .pill-pro {
+            background: rgba(59, 130, 246, 0.12);
+            border: 1px solid rgba(59, 130, 246, 0.7);
+        }
+
+        .pill-cat {
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.7);
+        }
+
+        .scanner-tier-header {
+            border-radius: 0.9rem 0.9rem 0 0;
+        }
+
+        .table-dark {
+            --bs-table-bg: transparent;
+            --bs-table-striped-bg: rgba(15, 23, 42, 0.75);
+            --bs-table-hover-bg: rgba(15, 23, 42, 0.95);
+            color: var(--text-main);
+        }
+
+        .table-dark td, .table-dark th {
+            border-color: var(--border-subtle);
+        }
+
+        body.light-mode .table-dark {
+            --bs-table-bg: transparent;
+            --bs-table-striped-bg: #f9fafb;
+            --bs-table-hover-bg: #e5e7eb;
+            color: #111827;
+        }
+
+        .ticker-chip {
+            font-weight: 600;
+            color: var(--accent-primary);
+        }
+
+        .gain-chip {
+            color: var(--accent-success);
+            font-weight: 600;
+        }
+
+        .nav-tabs {
+            border-bottom-color: var(--border-subtle);
+        }
+
+        .nav-tabs .nav-link {
+            border-radius: 999px;
+            border: none;
+            margin-right: 0.5rem;
+            padding: 0.4rem 0.9rem;
+            color: var(--text-muted-soft);
+            background: transparent;
+        }
+
+        .nav-tabs .nav-link.active {
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+        }
+
+        .news-filters-card {
+            background: var(--bg-card-soft);
+        }
+
+        .watch-pill {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--text-main);
+            border-radius: 999px;
+            padding: 0.15rem 0.65rem;
+            font-size: 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        body.light-mode .watch-pill {
+            background: rgba(37, 99, 235, 0.12);
+            color: #111827;
+        }
+
+        .watch-pill-remove {
+            border: none;
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+            font-size: 0.85rem;
+            line-height: 1;
+        }
+
+        .topic-chip {
+            border: 1px solid var(--border-subtle);
+            border-radius: 999px;
+            padding: 0.25rem 0.85rem;
+            font-size: 0.8rem;
+            color: var(--text-muted-soft);
+            cursor: pointer;
+            background: transparent;
+            transition: all 0.2s ease;
+        }
+
+        .topic-chip.active {
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+            border-color: transparent;
+        }
+
+        .btn-refresh {
+            border-radius: 999px;
+            border: 1px solid var(--border-subtle);
+            padding: 0.35rem 1.1rem;
+            font-size: 0.85rem;
+            color: var(--text-main);
+            background: transparent;
+            transition: all 0.2s ease;
+        }
+
+        .btn-refresh:hover {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent-primary);
+        }
+
+        body.light-mode .btn-refresh {
+            color: #111827;
+        }
+
+        .history-controls {
+            background: rgba(15, 23, 42, 0.4);
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .history-controls .form-control,
+        .history-controls .form-select {
+            background-color: rgba(15, 23, 42, 0.65);
+            border-color: var(--border-subtle);
+            color: var(--text-main);
+        }
+
+        .history-controls .form-control::placeholder {
+            color: var(--text-muted-soft);
+        }
+
+        .history-controls .input-group-text {
+            background: transparent;
+            border-color: var(--border-subtle);
+            color: var(--text-muted-soft);
+        }
+
+        .history-results-count {
+            white-space: nowrap;
+        }
+
+        .table-sortable th {
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        .history-sortable .sort-indicator {
+            font-size: 0.7rem;
+            opacity: 0.6;
+            margin-left: 0.2rem;
+        }
+
+        .history-sortable .sort-indicator::before {
+            content: '↕';
+        }
+
+        .history-sortable.sorted-asc .sort-indicator::before {
+            content: '↑';
+        }
+
+        .history-sortable.sorted-desc .sort-indicator::before {
+            content: '↓';
+        }
+
+        .history-table-row {
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .history-table-row.active {
+            background: rgba(56, 189, 248, 0.08) !important;
+        }
+
+        body.light-mode .history-controls {
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        body.light-mode .history-controls .form-control,
+        body.light-mode .history-controls .form-select {
+            background-color: #fff;
+            color: #111827;
+        }
+
+        body.light-mode .history-controls .btn-outline-light {
+            color: #111827;
+            border-color: var(--border-subtle);
+        }
+
+        .news-card .card-header,
+        .news-card .card-body {
+            background-color: transparent;
+        }
+
+        .news-card .list-group-item {
+            background: transparent;
+            border-color: var(--border-subtle);
+            color: var(--text-main) !important;
+        }
+
+        body.light-mode .news-card .list-group-item {
+            color: #111827 !important;
+        }
+
+        .news-card .list-group-item:hover {
+            background: rgba(56, 189, 248, 0.08);
+        }
+
+        .news-card .list-group-item .text-muted {
+            color: var(--text-muted-soft) !important;
+        }
+
+        .news-card .headline-title {
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+
+        .news-card .headline-summary {
+            font-size: 0.92rem;
+            color: var(--text-muted-soft);
+        }
+
+        body.light-mode .news-card .list-group-item:hover {
+            background: rgba(37, 99, 235, 0.08);
+        }
+
+        .badge-stance-bullish {
+            background: rgba(22, 163, 74, 0.14);
+            color: #4ade80;
+        }
+
+        .badge-stance-bearish {
+            background: rgba(220, 38, 38, 0.14);
+            color: #fb7185;
+        }
+
+        .badge-stance-mixed {
+            background: rgba(234, 179, 8, 0.14);
+            color: #facc15;
+        }
+
+        .badge-stance-neutral {
+            background: rgba(148, 163, 184, 0.14);
+            color: #e5e7eb;
+        }
+
+        .badge-impact-low {
+            background: rgba(148, 163, 184, 0.16);
+            color: #e5e7eb;
+        }
+
+        .badge-impact-medium {
+            background: rgba(234, 179, 8, 0.16);
+            color: #facc15;
+        }
+
+        .badge-impact-high {
+            background: rgba(220, 38, 38, 0.16);
+            color: #fb7185;
+        }
+
+        .theme-toggle-label {
+            font-size: 0.8rem;
+            color: var(--text-muted-soft);
+        }
+
+        @media (max-width: 991.98px) {
+            .app-shell {
+                padding-inline: 0.75rem;
+            }
+        }
+    </style>
 </head>
-<body class="theme-dark">
-  <div class="app-shell">
+<body class="dark-mode">
+<div class="app-shell">
     <!-- Header -->
-    <div class="bbx-header">
-      <div>
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-          <div class="bbx-title">Black Box Scanner</div>
-          <span class="bbx-badge">PRO PERSONAL</span>
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+        <div class="mb-2">
+            <h1 class="h3 mb-1">
+                Black Box Scanner
+                <span class="badge rounded-pill bg-danger ms-1">PRO LIVE</span>
+            </h1>
+            <p class="text-muted mb-0 small">
+                High-velocity breakout & catalyst radar. For your eyes only.
+            </p>
         </div>
-        <div class="bbx-subtitle">Hedge-fund style scanner + live news brain, for your own use.</div>
-      </div>
-      <div class="header-right">
-        <span class="time-pill">Last scan: <span id="lastScanTime">Never</span></span>
-        <span class="time-pill">News refresh: <span id="lastNewsTime">Never</span></span>
-        <button id="themeToggle" class="theme-btn">Switch Theme</button>
-      </div>
+        <div class="d-flex align-items-center gap-3 mb-2">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="themeSwitch">
+                <label class="form-check-label theme-toggle-label" for="themeSwitch">
+                    Dark mode
+                </label>
+            </div>
+            <div class="text-end">
+                <button id="runScanBtn" class="btn btn-sm btn-primary">
+                    Run Scanner
+                </button>
+                <p id="lastUpdated" class="text-muted small mb-0 mt-1">Last scan: never</p>
+            </div>
+        </div>
     </div>
 
     <!-- Tabs -->
-    <div class="bbx-tabs mb-3">
-      <button class="bbx-tab-btn active" id="scannerTabBtn">Scanner</button>
-      <button class="bbx-tab-btn" id="newsTabBtn">News &amp; AI</button>
-    </div>
+    <ul class="nav nav-tabs mb-3" id="mainTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="scanner-tab" data-bs-toggle="tab" data-bs-target="#scanner-pane"
+                    type="button" role="tab">
+                Scanner
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="news-tab" data-bs-toggle="tab" data-bs-target="#news-pane"
+                    type="button" role="tab">
+                News & AI Lens
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history-pane"
+                    type="button" role="tab">
+                History
+            </button>
+        </li>
+    </ul>
 
-    <!-- Scanner tab -->
-    <div id="scannerTab">
-      <div class="profile-row">
-        <div>
-          <div class="text-muted" style="font-size:.9rem;">Profile:</div>
-          <div class="profile-pills">
-            <button class="profile-pill active" data-profile="hedge_fund">Hedge Fund</button>
-            <button class="profile-pill" data-profile="pro_trader">Pro Trader</button>
-            <button class="profile-pill" data-profile="catalyst">Catalyst Hunter</button>
-          </div>
-        </div>
-        <button id="runScanBtn" class="run-btn">Run Scanner</button>
-      </div>
-
-      <div class="row g-3">
-        <div class="col-lg-4 col-md-12">
-          <div class="scanner-card">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div class="scanner-card-title">🔥 SmallCap / High Beta</div>
-              <span class="scanner-chip">Aggressive</span>
+    <div class="tab-content">
+        <!-- ===================== SCANNER TAB ===================== -->
+        <div class="tab-pane fade show active" id="scanner-pane" role="tabpanel" aria-labelledby="scanner-tab">
+            <!-- Profile selector row -->
+            <div class="card mb-3">
+                <div class="card-body py-2">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            <span class="text-muted small me-1">Profile:</span>
+                            <div class="btn-group btn-group-sm" role="group" aria-label="Profile selector">
+                                <button class="btn btn-outline-light active" data-profile="hedge_fund" id="btnProfileHedge">
+                                    <span class="pill pill-hedge">Hedge Fund PM</span>
+                                </button>
+                                <button class="btn btn-outline-light" data-profile="pro_trader" id="btnProfilePro">
+                                    <span class="pill pill-pro">Pro Momentum</span>
+                                </button>
+                                <button class="btn btn-outline-light" data-profile="catalyst" id="btnProfileCat">
+                                    <span class="pill pill-cat">News / SEC</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="text-end small text-muted">
+                            Click any name below to open its trading plan & history.
+                        </div>
+                    </div>
+                </div>
             </div>
-            <table class="scanner-table">
-              <thead><tr><th style="width:45%;">Ticker</th><th style="width:25%;">Entry</th><th style="width:30%;">Target (%)</th></tr></thead>
-              <tbody id="SmallCap-table">
-                <tr><td colspan="3" class="scanner-empty">No setups from scanner.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div class="col-lg-4 col-md-12">
-          <div class="scanner-card">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div class="scanner-card-title">🟡 MidCap / Liquidity Mix</div>
-              <span class="scanner-chip">Balanced</span>
+
+            <!-- 3 tiers row -->
+            <div class="row g-3 mb-3">
+                <!-- SmallCap -->
+                <div class="col-12 col-lg-4">
+                    <div class="card h-100">
+                        <div class="card-header scanner-tier-header">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="badge bg-danger-subtle text-danger">🔥 SmallCap / High Beta</span>
+                                </div>
+                                <small class="text-muted">Aggressive</small>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-dark table-striped table-hover mb-0">
+                                <thead>
+                                <tr>
+                                    <th>Ticker</th>
+                                    <th>Entry</th>
+                                    <th>Target (%)</th>
+                                </tr>
+                                </thead>
+                                <tbody id="SmallCap-table">
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted py-3">
+                                        No data yet. Run scanner.
+                                    </td>
+                                </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MidCap -->
+                <div class="col-12 col-lg-4">
+                    <div class="card h-100">
+                        <div class="card-header scanner-tier-header">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="badge bg-warning-subtle text-warning">🟡 MidCap / Liquidity Mix</span>
+                                </div>
+                                <small class="text-muted">Balanced</small>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-dark table-striped table-hover mb-0">
+                                <thead>
+                                <tr>
+                                    <th>Ticker</th>
+                                    <th>Entry</th>
+                                    <th>Target (%)</th>
+                                </tr>
+                                </thead>
+                                <tbody id="MidCap-table">
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted py-3">
+                                        No data yet. Run scanner.
+                                    </td>
+                                </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LargeCap -->
+                <div class="col-12 col-lg-4">
+                    <div class="card h-100">
+                        <div class="card-header scanner-tier-header">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="badge bg-success-subtle text-success">🟢 LargeCap / Institutional</span>
+                                </div>
+                                <small class="text-muted">Stable</small>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-dark table-striped table-hover mb-0">
+                                <thead>
+                                <tr>
+                                    <th>Ticker</th>
+                                    <th>Entry</th>
+                                    <th>Target (%)</th>
+                                </tr>
+                                </thead>
+                                <tbody id="LargeCap-table">
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted py-3">
+                                        No data yet. Run scanner.
+                                    </td>
+                                </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <table class="scanner-table">
-              <thead><tr><th style="width:45%;">Ticker</th><th style="width:25%;">Entry</th><th style="width:30%;">Target (%)</th></tr></thead>
-              <tbody id="MidCap-table">
-                <tr><td colspan="3" class="scanner-empty">No setups from scanner.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div class="col-lg-4 col-md-12">
-          <div class="scanner-card">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div class="scanner-card-title">🟢 LargeCap / Institutional</div>
-              <span class="scanner-chip">Steadier</span>
+
+            <!-- Trading Plan / Details card + History -->
+            <div class="card" id="scanner-analysis-card">
+                <div class="card-body">
+                    <p class="text-center text-muted mb-0">
+                        Click any ticker in the tables above to load its trading thesis, plan, and alert history here.
+                    </p>
+                </div>
             </div>
-            <table class="scanner-table">
-              <thead><tr><th style="width:45%;">Ticker</th><th style="width:25%;">Entry</th><th style="width:30%;">Target (%)</th></tr></thead>
-              <tbody id="LargeCap-table">
-                <tr><td colspan="3" class="scanner-empty">No setups from scanner.</td></tr>
-              </tbody>
-            </table>
-          </div>
         </div>
-      </div>
 
-      <div class="analysis-shell mt-3" id="analysisShell">
-        <div class="analysis-title mb-1">Selected Setup — Trading Plan</div>
-        <div class="text-muted">Run the scanner and click any row to load the full thesis.</div>
-      </div>
-    </div>
-
-    <!-- News tab -->
-    <div id="newsTab" style="display:none;">
-      <div class="news-card mb-3">
-        <div class="row g-2 align-items-end">
-          <div class="col-md-9">
-            <label class="form-label mb-1" style="font-size:.9rem;">Watchlist (tickers or names)</label>
-            <div class="d-flex gap-2">
-              <input id="watchlistInput" class="form-control form-control-sm" placeholder="TSLA, Tesla, NVDA, etc"/>
-              <button id="addWatchBtn" class="btn btn-sm btn-outline-info">Add</button>
+        <!-- ===================== NEWS TAB ===================== -->
+        <div class="tab-pane fade" id="news-pane" role="tabpanel" aria-labelledby="news-tab">
+            <div class="card mb-3 news-filters-card">
+                <div class="card-body py-3">
+                    <div class="row g-3 align-items-center">
+                        <div class="col-lg-5 col-md-6">
+                            <div class="small text-muted mb-1">Watchlist (tickers or names):</div>
+                            <div class="d-flex gap-2">
+                                <input type="text" id="watchInput" class="form-control form-control-sm"
+                                       placeholder="TSLA, NVDA, JNJ or Tesla">
+                                <button id="watchAddBtn" class="btn btn-outline-info btn-sm" type="button">
+                                    Add
+                                </button>
+                            </div>
+                            <div class="mt-2 d-flex flex-wrap gap-2" id="watchlistPills">
+                                <span class="text-muted small">No watchlist yet.</span>
+                            </div>
+                        </div>
+                        <div class="col-lg-5 col-md-6">
+                            <div class="small text-muted mb-1">Topic filters:</div>
+                            <div class="d-flex flex-wrap gap-2" id="topicChips">
+                                <button type="button" class="topic-chip active" data-topic="all">All</button>
+                                <button type="button" class="topic-chip" data-topic="ai">AI &amp; Automation</button>
+                                <button type="button" class="topic-chip" data-topic="quantum">Quantum Computing</button>
+                                <button type="button" class="topic-chip" data-topic="bio">Biotech &amp; HealthTech</button>
+                                <button type="button" class="topic-chip" data-topic="renewable">Renewable &amp; Cleantech</button>
+                                <button type="button" class="topic-chip" data-topic="cyber">Cybersecurity &amp; Cloud</button>
+                                <button type="button" class="topic-chip" data-topic="synbio">Synthetic Biology</button>
+                                <button type="button" class="topic-chip" data-topic="bci">BCI &amp; Neurotech</button>
+                                <button type="button" class="topic-chip" data-topic="nuclear">Advanced Nuclear</button>
+                            </div>
+                        </div>
+                        <div class="col-lg-2 col-md-12 text-lg-end">
+                            <button id="refreshNewsBtn" class="btn-refresh w-100" type="button">
+                                Refresh News
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div id="watchlistChips" class="mt-1"></div>
-          </div>
-          <div class="col-md-3 text-md-end">
-            <label class="form-label mb-1 d-block" style="font-size:.9rem;">News</label>
-            <button id="refreshNewsBtn" class="btn btn-sm btn-outline-success">Refresh News</button>
-          </div>
-        </div>
-      </div>
+            <div class="row g-3">
+                <!-- Left: Headline stream -->
+                <div class="col-12 col-lg-7">
+                    <div class="card mb-3 news-card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="badge bg-info-subtle text-info">Live Headlines</span>
+                                <span class="text-muted small ms-2">Finnhub + Benzinga</span>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="list-group list-group-flush" id="news-list">
+                                <div class="text-center text-muted py-3 small">
+                                    Click “Refresh” to load headlines.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-      <div class="mb-2">
-        <div class="text-muted mb-1" style="font-size:.9rem;">Focus topics (optional)</div>
-        <div id="topicBar">
-          <button class="topic-pill" data-topic="ai">AI & Automation</button>
-          <button class="topic-pill" data-topic="quantum">Quantum Computing</button>
-          <button class="topic-pill" data-topic="bio">Biotech & HealthTech</button>
-          <button class="topic-pill" data-topic="renewable">Renewable & Cleantech</button>
-          <button class="topic-pill" data-topic="cyber">Cybersecurity & Cloud</button>
-          <button class="topic-pill" data-topic="synbio">Synthetic Biology</button>
-          <button class="topic-pill" data-topic="bci">BCI & Neurotech</button>
-          <button class="topic-pill" data-topic="nuclear">Advanced Nuclear</button>
-        </div>
-      </div>
-
-      <div class="row g-3">
-        <div class="col-lg-7">
-          <div class="news-card">
-            <div class="news-card-title mb-1">🎯 Stock-Focused Headlines</div>
-            <div class="text-muted mb-1" style="font-size:.9rem;">Watchlist + topics drive this list.</div>
-            <div id="stockFocusList" class="mt-1">
-              <div class="text-muted">No filtered headlines yet.</div>
+                <!-- Right: AI News Analysis -->
+                <div class="col-12 col-lg-5">
+                    <div class="card h-100" id="news-analysis-card">
+                        <div class="card-body">
+                            <h5 class="mb-2">AI News Lens</h5>
+                            <p class="text-muted small mb-3">
+                                Click <strong>“AI Analysis”</strong> on any headline to see how a trading desk might interpret it.
+                                When loaded, this panel will auto-focus for you.
+                            </p>
+                            <p class="text-center text-muted mb-0">
+                                No headline selected yet.
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </div>
-          </div>
-
-          <div class="news-card">
-            <div class="news-card-title mb-1">⚡ Benzinga Stream</div>
-            <div id="benzingaList"><div class="text-muted">Loading…</div></div>
-          </div>
-
-          <div class="news-card">
-            <div class="news-card-title mb-1">🌍 Macro & Market (Finnhub)</div>
-            <div id="finnhubList"><div class="text-muted">Loading…</div></div>
-          </div>
         </div>
 
-        <div class="col-lg-5">
-          <div class="news-card" id="newsAnalysisPanel">
-            <div class="news-card-title mb-1">🧠 AI Lens on News</div>
-            <div class="text-muted">Click “AI Analysis” on any headline.</div>
-          </div>
+        <!-- ===================== HISTORY TAB ===================== -->
+        <div class="tab-pane fade" id="history-pane" role="tabpanel" aria-labelledby="history-tab">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0">Alert Performance History</h5>
+                        <small class="text-muted">
+                            Aggregated from all past scans, ranked by performance from last entry.
+                        </small>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="history-controls p-3">
+                        <div class="input-group input-group-sm flex-grow-1 flex-lg-grow-0">
+                            <span class="input-group-text">Search</span>
+                            <input type="search" class="form-control" id="historySearch"
+                                   placeholder="Ticker, profile, tier...">
+                        </div>
+                        <select class="form-select form-select-sm w-auto" id="historyProfileFilter">
+                            <option value="">Profile: All</option>
+                            <option value="hedge_fund">Hedge Fund PM</option>
+                            <option value="pro_trader">Pro Momentum</option>
+                            <option value="catalyst">News / SEC</option>
+                        </select>
+                        <select class="form-select form-select-sm w-auto" id="historyTierFilter">
+                            <option value="">Tier: All</option>
+                            <option value="SmallCap">SmallCap / High Beta</option>
+                            <option value="MidCap">MidCap / Balanced</option>
+                            <option value="LargeCap">LargeCap / Institutional</option>
+                        </select>
+                        <button class="btn btn-sm btn-outline-light ms-auto" id="historyResetFilters">
+                            Reset
+                        </button>
+                        <small class="text-muted history-results-count" id="historyResultsCount">
+                            Showing 0 / 0
+                        </small>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-hover mb-0 table-sortable">
+                            <thead>
+                            <tr>
+                                <th class="history-sortable" data-history-sort="ticker">
+                                    Ticker <span class="sort-indicator"></span>
+                                </th>
+                                <th class="history-sortable" data-history-sort="alerts">
+                                    Alerts <span class="sort-indicator"></span>
+                                </th>
+                                <th class="history-sortable" data-history-sort="last_profile">
+                                    Last Profile <span class="sort-indicator"></span>
+                                </th>
+                                <th class="history-sortable" data-history-sort="last_tier">
+                                    Last Tier <span class="sort-indicator"></span>
+                                </th>
+                                <th class="history-sortable" data-history-sort="last_entry">
+                                    Last Entry <span class="sort-indicator"></span>
+                                </th>
+                                <th class="history-sortable" data-history-sort="current_price">
+                                    Current <span class="sort-indicator"></span>
+                                </th>
+                                <th class="history-sortable" data-history-sort="current_change_pct">
+                                    % from Entry <span class="sort-indicator"></span>
+                                </th>
+                                <th class="history-sortable" data-history-sort="first_date">
+                                    First Seen <span class="sort-indicator"></span>
+                                </th>
+                                <th class="history-sortable" data-history-sort="last_date">
+                                    Last Seen <span class="sort-indicator"></span>
+                                </th>
+                            </tr>
+                            </thead>
+                            <tbody id="history-table-body">
+                            <tr>
+                                <td colspan="9" class="text-center text-muted py-3">
+                                    History will appear here after you run scans.
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-3" id="history-analysis-card">
+                <div class="card-body" id="history-analysis-body">
+                    <p class="text-muted mb-0">Select any ticker in the history table to load a full AI breakdown.</p>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-    // ---------------- Theme toggle (robust) ----------------
-    const bodyEl = document.body;
-    const themeBtn = document.getElementById('themeToggle');
-    function getStoredTheme(){
-      try { return localStorage.getItem('bbx-theme'); } catch { return null; }
-    }
-    function setStoredTheme(v){
-      try { localStorage.setItem('bbx-theme', v); } catch {}
-    }
-    function applyTheme(mode){
-      bodyEl.classList.toggle('theme-light', mode === 'light');
-      bodyEl.classList.toggle('theme-dark', mode !== 'light');
-    }
-    const initial = getStoredTheme() || 'dark';
-    applyTheme(initial);
-    themeBtn.addEventListener('click', () => {
-      const next = bodyEl.classList.contains('theme-dark') ? 'light' : 'dark';
-      applyTheme(next);
-      setStoredTheme(next);
-    });
+    </div> <!-- end tab-content -->
+</div>
 
-    // ---------------- Tabs ----------------
-    const scannerTabBtn = document.getElementById("scannerTabBtn");
-    const newsTabBtn = document.getElementById("newsTabBtn");
-    const scannerTab = document.getElementById("scannerTab");
-    const newsTab = document.getElementById("newsTab");
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // ------------- Theme handling -------------
+    const themeSwitch = document.getElementById('themeSwitch');
 
-    scannerTabBtn.addEventListener("click", () => {
-      scannerTabBtn.classList.add("active");
-      newsTabBtn.classList.remove("active");
-      scannerTab.style.display = "";
-      newsTab.style.display = "none";
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    });
-    newsTabBtn.addEventListener("click", () => {
-      newsTabBtn.classList.add("active");
-      scannerTabBtn.classList.remove("active");
-      scannerTab.style.display = "none";
-      newsTab.style.display = "";
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    });
-
-    // ---------------- Scanner ----------------
-    const MARKET_CAPS = ["SmallCap","MidCap","LargeCap"];
-    let currentProfile = "hedge_fund";
-    let scannerData = { SmallCap:[], MidCap:[], LargeCap:[] };
-
-    document.querySelectorAll(".profile-pill").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        document.querySelectorAll(".profile-pill").forEach(b=>b.classList.remove("active"));
-        btn.classList.add("active");
-        currentProfile = btn.getAttribute("data-profile");
-      });
-    });
-
-    const runScanBtn = document.getElementById("runScanBtn");
-    const lastScanTimeEl = document.getElementById("lastScanTime");
-    const analysisShell = document.getElementById("analysisShell");
-    let currentActiveRow = null;
-
-    async function fetchScan(){
-      runScanBtn.disabled = true; runScanBtn.textContent = "Scanning…";
-      try{
-        const r = await fetch("/api/scan", {
-          method: "POST",
-          headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({ profile: currentProfile })
-        });
-        const j = await r.json();
-        if(!j.success){
-          console.error("Scanner error:", j.error);
-          alert("Scanner error: " + (j.error || "Unknown"));
-          return;
+    function applyTheme(theme) {
+        if (theme === 'light') {
+            document.body.classList.add('light-mode');
+        } else {
+            document.body.classList.remove('light-mode');
         }
-        scannerData = j.data || {SmallCap:[],MidCap:[],LargeCap:[]};
-        displayScannerAlerts(scannerData);
-        lastScanTimeEl.textContent = new Date().toLocaleTimeString();
-      }catch(e){
-        console.error(e);
-        alert("Network or server error running scanner.");
-      }finally{
-        runScanBtn.disabled = false; runScanBtn.textContent = "Run Scanner";
-      }
+        localStorage.setItem('theme', theme);
+        themeSwitch.checked = theme !== 'light';
     }
-    runScanBtn.addEventListener("click", fetchScan);
 
-    function displayScannerAlerts(data){
-      currentActiveRow = null;
-      MARKET_CAPS.forEach(cap=>{
-        const tbody = document.getElementById(cap+"-table");
-        tbody.innerHTML = "";
-        const alerts = data[cap] || [];
-        if(!alerts.length){
-          tbody.innerHTML = '<tr><td colspan="3" class="scanner-empty">No setups from scanner.</td></tr>';
-          return;
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    applyTheme(savedTheme);
+
+    themeSwitch.addEventListener('change', () => {
+        const newTheme = themeSwitch.checked ? 'dark' : 'light';
+        applyTheme(newTheme);
+    });
+
+    // ------------- Scanner logic -------------
+    const MARKET_CAPS = ['SmallCap', 'MidCap', 'LargeCap'];
+    let allScanData = { SmallCap: [], MidCap: [], LargeCap: [] };
+    let currentProfile = 'hedge_fund';
+    const PROFILE_LABELS = {
+        hedge_fund: 'Hedge Fund PM',
+        pro_trader: 'Pro Momentum',
+        catalyst: 'News / SEC'
+    };
+
+    const runScanBtn = document.getElementById('runScanBtn');
+    const lastUpdated = document.getElementById('lastUpdated');
+
+    const btnProfileHedge = document.getElementById('btnProfileHedge');
+    const btnProfilePro = document.getElementById('btnProfilePro');
+    const btnProfileCat = document.getElementById('btnProfileCat');
+
+    function setProfile(profile) {
+        currentProfile = profile;
+        [btnProfileHedge, btnProfilePro, btnProfileCat].forEach(btn => btn.classList.remove('active'));
+        if (profile === 'hedge_fund') btnProfileHedge.classList.add('active');
+        if (profile === 'pro_trader') btnProfilePro.classList.add('active');
+        if (profile === 'catalyst') btnProfileCat.classList.add('active');
+    }
+
+    btnProfileHedge.addEventListener('click', () => setProfile('hedge_fund'));
+    btnProfilePro.addEventListener('click', () => setProfile('pro_trader'));
+    btnProfileCat.addEventListener('click', () => setProfile('catalyst'));
+
+    async function fetchScan() {
+        runScanBtn.disabled = true;
+        runScanBtn.textContent = 'Scanning...';
+
+        try {
+            const resp = await fetch('/api/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ profile: currentProfile })
+            });
+
+            const result = await resp.json();
+
+            if (!result.success) {
+                console.error('Scanner error:', result.error);
+                alert('Scanner error: ' + (result.error || 'Unknown error'));
+                return;
+            }
+
+            allScanData = result.data || { SmallCap: [], MidCap: [], LargeCap: [] };
+            renderScannerTables();
+            lastUpdated.textContent = 'Last scan: ' + new Date().toLocaleTimeString();
+        } catch (err) {
+            console.error('Scanner fetch error', err);
+            alert('Scanner error: Scanner failed due to server error.');
+        } finally {
+            runScanBtn.disabled = false;
+            runScanBtn.textContent = 'Run Scanner';
         }
-        alerts.forEach((alert,idx)=>{
-          const tr = document.createElement("tr");
-          tr.dataset.cap = cap; tr.dataset.index = idx;
-          const ticker = (alert.Ticker||"").toString();
-          const entry = alert.EntryPrice!=null ? Number(alert.EntryPrice) : null;
-          const rt = alert.RealTimePrice!=null ? Number(alert.RealTimePrice) : null;
-          const target = alert.TargetPrice!=null ? Number(alert.TargetPrice) : null;
-          const gain = alert.PotentialGainPercent!=null ? Number(alert.PotentialGainPercent) : null;
+    }
 
-          tr.innerHTML = `
-            <td>
-              <span class="scanner-ticker">${ticker}</span>
-              ${rt!=null ? `<div class="scanner-rt">RT: $${rt.toFixed(2)}</div>` : ""}
-            </td>
-            <td>${entry!=null?`$${entry.toFixed(2)}`:"—"}</td>
-            <td>${gain!=null?`<span class="scanner-gain">+${gain.toFixed(2)}%</span>`:"—"} ${target!=null?`<div class="scanner-rt">@ $${target.toFixed(2)}</div>`:""}</td>
-          `;
-          tr.addEventListener("click", ()=>{
-            if(currentActiveRow) currentActiveRow.classList.remove("table-active");
-            tr.classList.add("table-active");
-            currentActiveRow = tr;
-            showAnalysisCard(cap, idx);
-          });
-          tbody.appendChild(tr);
+    runScanBtn.addEventListener('click', fetchScan);
+
+    function renderScannerTables() {
+        MARKET_CAPS.forEach(cap => {
+            const tbody = document.getElementById(cap + '-table');
+            tbody.innerHTML = '';
+
+            const alerts = allScanData[cap] || [];
+            const valid = alerts.filter(a => a && typeof a === 'object' && a.Ticker);
+
+            if (valid.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="3" class="text-center text-muted py-3">No candidates returned for this tier.</td>
+                    </tr>
+                `;
+                return;
+            }
+
+            valid.forEach(alert => {
+                const tr = document.createElement('tr');
+                const ticker = (alert.Ticker || '').toUpperCase();
+                const entry = (typeof alert.EntryPrice === 'number')
+                    ? alert.EntryPrice.toFixed(2)
+                    : String(alert.EntryPrice || '-');
+                const tgt = (typeof alert.TargetPrice === 'number')
+                    ? alert.TargetPrice.toFixed(2)
+                    : String(alert.TargetPrice || '-');
+                const gain = (typeof alert.PotentialGainPercent === 'number')
+                    ? alert.PotentialGainPercent.toFixed(2)
+                    : '-';
+
+                const catalyst = (alert.PrimaryCatalyst || '').toLowerCase();
+                const hasCat = catalyst.includes('sec') ||
+                    catalyst.includes('fda') ||
+                    catalyst.includes('earnings') ||
+                    catalyst.includes('news') ||
+                    catalyst.includes('partnership') ||
+                    catalyst.includes('merger');
+
+                const badgeText = hasCat ? 'CATALYST' : 'TECH';
+                const badgeClass = hasCat ? 'bg-danger' : 'bg-info';
+
+                tr.innerHTML = `
+                    <td>
+                        <span class="ticker-chip">${ticker}</span>
+                        <span class="badge ${badgeClass} ms-1">${badgeText}</span>
+                    </td>
+                    <td>$${entry}</td>
+                    <td>
+                        <span class="gain-chip">+${gain}%</span>
+                        <span class="text-muted small ms-1">@${tgt === '-' ? '-' : '$' + tgt}</span>
+                    </td>
+                `;
+
+                tr.addEventListener('click', () => {
+                    showScannerAnalysisCard(cap, ticker);
+                });
+
+                tbody.appendChild(tr);
+            });
         });
-      });
-      // auto select first row
-      for(const cap of MARKET_CAPS){
-        const first = document.querySelector(`#${cap}-table tr`);
-        if(first){ first.click(); break; }
-      }
     }
 
-    function showAnalysisCard(cap,index){
-      const alert = (scannerData[cap]||[])[index];
-      if(!alert){
-        analysisShell.innerHTML = '<div class="text-muted">No analysis for this item.</div>';
-        return;
-      }
-      const t = alert.Ticker||"";
-      const entry = alert.EntryPrice!=null?Number(alert.EntryPrice):null;
-      const rt = alert.RealTimePrice!=null?Number(alert.RealTimePrice):null;
-      const target = alert.TargetPrice!=null?Number(alert.TargetPrice):null;
-      const gain = alert.PotentialGainPercent!=null?Number(alert.PotentialGainPercent):null;
-      const stop = alert.StopPrice!=null?Number(alert.StopPrice):null;
+    async function loadScannerHistory(ticker) {
+        const container = document.getElementById('scanner-history-inner');
+        if (!container) return;
 
-      let bullets = [];
-      const raw = alert.DetailedAnalysis;
-      if(Array.isArray(raw)) bullets = raw;
-      else if(typeof raw === "string"){
-        bullets = raw.split("\n").map(s=>s.replace(/^[-*]\s?/,"").trim()).filter(Boolean);
-      }
-      if(!bullets.length) bullets = ["No detailed thesis provided by AI. Treat as high-level idea only."];
+        container.innerHTML = `<p class="text-muted small mb-0">Loading history…</p>`;
 
-      analysisShell.innerHTML = `
-        <div class="analysis-title mb-2">${t} — Trading Plan</div>
-        <div class="row g-3">
-          <div class="col-lg-7">
-            <div class="analysis-section-title mb-1">Trade Setup & Thesis <span class="badge bg-warning text-dark ms-1" style="font-size:.75rem;">WHY NOW?</span></div>
-            <ul class="analysis-bullets">
-              ${bullets.map(b=>`<li>${b}</li>`).join("")}
-            </ul>
-            <div class="mt-2"><span class="analysis-label">Primary Catalyst:</span> ${alert.PrimaryCatalyst || "None / purely technical"}</div>
-          </div>
-          <div class="col-lg-5">
-            <div class="analysis-section-title mb-2">Actionable Strategy <span class="badge bg-info text-dark ms-1" style="font-size:.75rem;">THE PLAN</span></div>
-            <div class="mb-2"><div class="analysis-label">Entry</div><div class="analysis-value-main">${entry!=null?`$${entry.toFixed(2)}`:"—"}</div>${rt!=null?`<div class="text-muted">(RT: $${rt.toFixed(2)})</div>`:""}</div>
-            <div class="mb-2"><div class="analysis-label">Target</div><div class="analysis-value-main">${target!=null?`$${target.toFixed(2)}`:"—"}</div></div>
-            <div class="mb-2"><div class="analysis-label">Potential Gain</div><div class="analysis-value-gain">${gain!=null?`${gain.toFixed(2)}%`:"—"}</div></div>
-            <div class="mb-2"><div class="analysis-label">Stop Loss</div><div class="analysis-value-stop">${stop!=null?`$${stop.toFixed(2)}`:"—"}</div></div>
-            <div class="text-muted" style="font-size:.9rem;">Always sanity-check liquidity, spreads, and risk. Not financial advice.</div>
-          </div>
-        </div>
-      `;
+        try {
+            const resp = await fetch('/api/history?ticker=' + encodeURIComponent(ticker));
+            const result = await resp.json();
+            if (!result.success) {
+                container.innerHTML = `<p class="text-muted small mb-0">No history data available.</p>`;
+                return;
+            }
+
+            const rows = result.data || [];
+            if (!rows.length) {
+                container.innerHTML = `<p class="text-muted small mb-0">No prior alerts recorded for this ticker yet.</p>`;
+                return;
+            }
+
+            let html = `
+                <div class="table-responsive">
+                  <table class="table table-dark table-striped table-sm mb-0">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Profile</th>
+                        <th>Tier</th>
+                        <th>Entry</th>
+                        <th>Scan Px</th>
+                        <th>Now</th>
+                        <th>% from Entry</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            rows.forEach(r => {
+                const date = r.date || '';
+                const time = r.time || '';
+                const profile = r.profile_label || r.profile || '';
+                const tier = r.tier || '';
+                const entry = (typeof r.entry === 'number') ? r.entry.toFixed(2) : (r.entry || '-');
+                const scanPx = (typeof r.scan_price === 'number') ? r.scan_price.toFixed(2) : (r.scan_price || '-');
+                const nowPx = (typeof r.current_price === 'number') ? r.current_price.toFixed(2) : (r.current_price || '-');
+                const pct = (typeof r.current_change_pct === 'number') ? (r.current_change_pct.toFixed(2) + '%') : '-';
+
+                html += `
+                    <tr>
+                      <td>${date} <span class="text-muted small">${time}</span></td>
+                      <td>${profile}</td>
+                      <td>${tier}</td>
+                      <td>$${entry}</td>
+                      <td>${scanPx === '-' ? '-' : '$' + scanPx}</td>
+                      <td>${nowPx === '-' ? '-' : '$' + nowPx}</td>
+                      <td>${pct}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                  </table>
+                </div>
+            `;
+            container.innerHTML = html;
+        } catch (err) {
+            console.error('History fetch error', err);
+            container.innerHTML = `<p class="text-muted small mb-0">Error loading history.</p>`;
+        }
     }
 
-    // ---------------- News & AI ----------------
-    const lastNewsTimeEl = document.getElementById("lastNewsTime");
-    const refreshNewsBtn = document.getElementById("refreshNewsBtn");
-    const stockFocusList = document.getElementById("stockFocusList");
-    const benzingaList = document.getElementById("benzingaList");
-    const finnhubList = document.getElementById("finnhubList");
-    const newsAnalysisPanel = document.getElementById("newsAnalysisPanel");
+    function showScannerAnalysisCard(cap, ticker) {
+        const card = document.getElementById('scanner-analysis-card');
+        const bucket = allScanData[cap] || [];
+        const alert = bucket.find(a => (a.Ticker || '').toUpperCase() === ticker.toUpperCase());
 
+        if (!alert) {
+            card.innerHTML = `
+                <div class="card-body">
+                    <p class="text-center text-muted mb-0">No analysis found for ${ticker}.</p>
+                </div>
+            `;
+            card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+        }
+
+        const entry = (typeof alert.EntryPrice === 'number')
+            ? alert.EntryPrice.toFixed(2)
+            : String(alert.EntryPrice || '-');
+        const target = (typeof alert.TargetPrice === 'number')
+            ? alert.TargetPrice.toFixed(2)
+            : String(alert.TargetPrice || '-');
+        const stop = (typeof alert.StopPrice === 'number')
+            ? alert.StopPrice.toFixed(2)
+            : String(alert.StopPrice || '-');
+        const gain = (typeof alert.PotentialGainPercent === 'number')
+            ? alert.PotentialGainPercent.toFixed(2)
+            : String(alert.PotentialGainPercent || '-');
+
+        const rawAnalysis = alert.DetailedAnalysis || '';
+        const bullets = String(rawAnalysis)
+            .split('\n')
+            .map(x => x.trim())
+            .filter(x => x.length > 0);
+
+        const listItems = bullets.map(b => `<li>${b.replace(/^[*-]\s*/, '')}</li>`).join('');
+
+        card.innerHTML = `
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0">${ticker} – Trading Plan</h5>
+                    <small class="text-muted">Tier: ${cap}</small>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-primary">Profile: ${PROFILE_LABELS[currentProfile] || currentProfile}</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-12 col-md-6 border-end border-secondary-subtle">
+                        <h6 class="mb-2">Trade Setup & Thesis</h6>
+                        ${listItems ? `<ul class="small mb-2">${listItems}</ul>` : `
+                            <p class="text-muted small mb-2">No detailed thesis text returned by AI.</p>
+                        `}
+                        <p class="small mb-0">
+                            <strong>Primary catalyst:</strong>
+                            <span class="text-muted">${alert.PrimaryCatalyst || 'None / purely technical'}</span>
+                        </p>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <h6 class="mb-2">Levels & Risk</h6>
+                        <p class="mb-1"><strong>Entry:</strong> $${entry}</p>
+                        <p class="mb-1"><strong>Target:</strong> $${target}</p>
+                        <p class="mb-1"><strong>Stop:</strong> $${stop}</p>
+                        <p class="mb-1">
+                            <strong>Potential Gain:</strong>
+                            <span class="gain-chip">${gain}%</span>
+                        </p>
+                        ${
+                            alert.RealTimePrice
+                                ? `<p class="mb-1 small text-muted">
+                                       Real-time price (Finnhub): $${alert.RealTimePrice.toFixed(2)}
+                                       ${alert.AIEntryPrice ? `(AI originally suggested ~$${Number(alert.AIEntryPrice).toFixed(2)})` : ''}
+                                   </p>`
+                                : ''
+                        }
+                        <p class="small text-muted mt-2 mb-0">
+                            This is an idea-generation tool, not investment advice. Always size risk appropriately.
+                        </p>
+                    </div>
+                </div>
+
+                <hr class="my-3 border-secondary-subtle">
+
+                <h6 class="mb-2">Alert History for ${ticker}</h6>
+                <div id="scanner-history-inner" class="small text-muted">
+                    Loading history…
+                </div>
+            </div>
+        `;
+
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        loadScannerHistory(ticker);
+    }
+
+    // ------------- News logic -------------
+    const newsListEl = document.getElementById('news-list');
+    const refreshNewsBtn = document.getElementById('refreshNewsBtn');
+    const watchInput = document.getElementById('watchInput');
+    const watchAddBtn = document.getElementById('watchAddBtn');
+    const watchlistPills = document.getElementById('watchlistPills');
+    const topicChipBar = document.getElementById('topicChips');
     let allNews = [];
     let watchlist = [];
     const activeTopics = new Set();
+
     const topicKeywords = {
-      ai:["ai","artificial intelligence","machine learning","llm","gen ai"],
-      quantum:["quantum","qubit"],
-      bio:["biotech","biotechnology","drug","fda","trial","phase 3","healthtech"],
-      renewable:["solar","wind","renewable","clean energy","ev","hydrogen"],
-      cyber:["cybersecurity","ransomware","cloud","breach","security"],
-      synbio:["synthetic biology","crispr","gene editing"],
-      bci:["brain-computer","bci","neuralink","neurotech"],
-      nuclear:["nuclear","fusion","fission","reactor","uranium"]
+        ai: ['ai', 'artificial intelligence', 'automation', 'machine learning', 'gen ai'],
+        quantum: ['quantum', 'qubit', 'photonic', 'quantum computing'],
+        bio: ['biotech', 'biotechnology', 'drug', 'trial', 'fda', 'healthtech', 'lifescience', 'life science'],
+        renewable: ['renewable', 'solar', 'wind', 'cleantech', 'clean tech', 'ev', 'battery', 'hydrogen', 'geothermal'],
+        cyber: ['cybersecurity', 'ransomware', 'cloud', 'data breach', 'zero trust', 'security'],
+        synbio: ['synthetic biology', 'synbio', 'crispr', 'gene editing'],
+        bci: ['bci', 'brain computer', 'brain-computer', 'neurotech', 'neuralink'],
+        nuclear: ['nuclear', 'fusion', 'fission', 'uranium', 'reactor']
     };
+
     const nameToTicker = {
-      tesla:"TSLA","elon musk":"TSLA","nvidia":"NVDA","nvda":"NVDA",
-      apple:"AAPL", microsoft:"MSFT", meta:"META", facebook:"META",
-      google:"GOOGL", alphabet:"GOOGL", amazon:"AMZN", palantir:"PLTR",
-      soundhound:"SOUN", "johnson & johnson":"JNJ", "johnson and johnson":"JNJ"
+        tesla: 'TSLA',
+        'elon musk': 'TSLA',
+        nvidia: 'NVDA',
+        nvda: 'NVDA',
+        apple: 'AAPL',
+        microsoft: 'MSFT',
+        meta: 'META',
+        facebook: 'META',
+        google: 'GOOGL',
+        alphabet: 'GOOGL',
+        amazon: 'AMZN',
+        palantir: 'PLTR',
+        soundhound: 'SOUN',
+        'johnson & johnson': 'JNJ',
+        'johnson and johnson': 'JNJ',
+        broadcom: 'AVGO',
+        supermicro: 'SMCI',
+        amd: 'AMD',
+        rivian: 'RIVN'
     };
 
-    async function fetchNews(){
-      try{
-        const r = await fetch("/api/news/headlines?limit=80");
-        const j = await r.json();
-        if(!j.success){ console.error(j.errors); return; }
-        allNews = j.data || [];
-        lastNewsTimeEl.textContent = new Date().toLocaleTimeString();
-        renderNewsLists();
-      }catch(e){ console.error(e); }
-    }
-    refreshNewsBtn.addEventListener("click", fetchNews);
-
-    function normalize(s){ return (s||"").toString().toLowerCase(); }
-
-    function renderNewsLists(){
-      if(!allNews.length){
-        stockFocusList.innerHTML = '<div class="text-muted">No news loaded yet.</div>';
-        benzingaList.innerHTML = '<div class="text-muted">No news loaded yet.</div>';
-        finnhubList.innerHTML = '<div class="text-muted">No news loaded yet.</div>';
-        return;
-      }
-      const wlUp = watchlist.map(w=>w.toUpperCase());
-      const wlLow = watchlist.map(w=>w.toLowerCase());
-      const stockFocus = [], benz = [], finn = [];
-
-      allNews.forEach((article, idx)=>{
-        const src = (article.source || article.provider || "").toLowerCase();
-        if(src.includes("benzinga")) benz.push({article, idx});
-        else finn.push({article, idx}); // everything else to 'macro' bucket
-
-        const text = `${normalize(article.headline)} ${normalize(article.summary)}`;
-        const tickers = (article.tickers||[]).map(t=>t.toUpperCase());
-
-        let wlHit = false;
-        if(wlUp.length){
-          wlHit = tickers.some(t=>wlUp.includes(t));
-          if(!wlHit){
-            wlLow.forEach(name=>{
-              if(wlHit) return;
-              const map = nameToTicker[name];
-              if(map && tickers.includes(map)) wlHit = true;
-              else if(text.includes(name)) wlHit = true;
-            });
-          }
+    function loadPersistedFilters() {
+        try {
+            const savedWatch = JSON.parse(localStorage.getItem('newsWatchlist') || '[]');
+            if (Array.isArray(savedWatch)) {
+                watchlist = savedWatch.slice(0, 25).filter(Boolean);
+            }
+            const savedTopics = JSON.parse(localStorage.getItem('newsTopics') || '[]');
+            if (Array.isArray(savedTopics)) {
+                savedTopics.forEach(topic => {
+                    if (topic && topicKeywords[topic]) {
+                        activeTopics.add(topic);
+                    }
+                });
+            }
+        } catch (err) {
+            console.warn('Failed to load saved filters', err);
         }
-
-        let topicHit = false;
-        if(activeTopics.size){
-          for(const k of activeTopics){
-            const kws = topicKeywords[k]||[];
-            if(kws.some(word=>text.includes(word))){ topicHit = true; break; }
-          }
-        }
-
-        if((wlUp.length || activeTopics.size) && (wlHit || topicHit)){
-          stockFocus.push({article, idx});
-        }
-      });
-
-      stockFocusList.innerHTML = stockFocus.length ? buildNewsListHTML(stockFocus) : '<div class="text-muted">No filtered headlines for current watchlist/topics.</div>';
-      benzingaList.innerHTML = benz.length ? buildNewsListHTML(benz) : '<div class="text-muted">No Benzinga items yet.</div>';
-      finnhubList.innerHTML = finn.length ? buildNewsListHTML(finn) : '<div class="text-muted">No macro items yet.</div>';
     }
 
-    function buildNewsListHTML(items){
-      return items.map(({article, idx})=>{
-        const time = article.published_ts ? new Date(article.published_ts*1000).toLocaleTimeString() : "";
-        const tickers = (article.tickers||[]).join(", ");
-        const src = article.source || article.provider || "News";
-        return `
-          <div class="py-2 border-bottom border-0">
-            <div class="d-flex justify-content-between align-items-start gap-2">
-              <div>
-                <div class="news-headline">${article.headline||""}</div>
-                <div class="news-meta">${src} • ${time} ${tickers?`• ${tickers}`:""}</div>
-              </div>
-              <div class="text-end">
-                <button class="btn btn-outline-info btn-xs" data-action="analyze" data-index="${idx}">AI Analysis</button>
-                ${article.url?`<div class="mt-1"><a href="${article.url}" target="_blank" class="news-meta">Open</a></div>`:""}
-              </div>
-            </div>
-          </div>
-        `;
-      }).join("");
+    function persistWatchlist() {
+        try {
+            localStorage.setItem('newsWatchlist', JSON.stringify(watchlist));
+        } catch (err) {
+            console.warn('Unable to persist watchlist', err);
+        }
     }
 
-    document.addEventListener("click", (e)=>{
-      const btn = e.target.closest("button[data-action='analyze']");
-      if(!btn) return;
-      const idx = Number(btn.getAttribute("data-index"));
-      if(Number.isNaN(idx) || !allNews[idx]) return;
-      analyzeNewsArticle(allNews[idx]);
-    });
+    function persistTopics() {
+        try {
+            localStorage.setItem('newsTopics', JSON.stringify(Array.from(activeTopics)));
+        } catch (err) {
+            console.warn('Unable to persist topics', err);
+        }
+    }
 
-    async function analyzeNewsArticle(article){
-      newsAnalysisPanel.innerHTML = `
-        <div class="news-card-title mb-1">🧠 AI Lens on News</div>
-        <div class="text-muted">Analyzing…</div>`;
-      try{
-        const symbol = (article.tickers||[])[0] || null;
-        const r = await fetch("/api/news/analysis", {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({ article, symbol })
+    function normalizeText(value) {
+        return (value || '').toString().toLowerCase();
+    }
+
+    function normalizeWatchValue(value) {
+        if (!value) return '';
+        const trimmed = value.trim();
+        if (!trimmed) return '';
+        const isTicker = /^[A-Za-z]{1,6}$/.test(trimmed);
+        if (isTicker) return trimmed.toUpperCase();
+        return trimmed.replace(/\s+/g, ' ');
+    }
+
+    function matchesWatchlist(article) {
+        if (!watchlist.length) return true;
+        const tickers = (article.tickers || []).map(t => t.toUpperCase());
+        const text = normalizeText(`${article.headline || ''} ${article.summary || ''}`);
+        return watchlist.some(item => {
+            const lowered = normalizeText(item);
+            const mapped = nameToTicker[lowered];
+            if (/^[A-Z]{1,6}$/.test(item) && tickers.includes(item)) return true;
+            if (mapped && tickers.includes(mapped)) return true;
+            return lowered && text.includes(lowered);
         });
-        const j = await r.json();
-        if(!j.success){
-          newsAnalysisPanel.innerHTML = `<div class="text-danger">AI analysis failed: ${j.error||"Unknown"}.</div>`;
-          return;
+    }
+
+    function matchesTopics(article) {
+        if (!activeTopics.size) return true;
+        const text = normalizeText(`${article.headline || ''} ${article.summary || ''}`);
+        for (const topic of activeTopics) {
+            const keywords = topicKeywords[topic] || [];
+            if (keywords.some(word => text.includes(word))) {
+                return true;
+            }
         }
-        const d = j.data || {};
-        const stance = (d.stance||"neutral").toUpperCase();
-        const impact = d.impact_level || "medium";
-        const bullets = (d.rationale||[]).map(x=>`<li>${x}</li>`).join("");
+        return false;
+    }
 
-        const stanceColor = stance==="BULLISH" ? "var(--success)" : stance==="BEARISH" ? "var(--danger)" : "var(--warning)";
+    function applyNewsFilters(items) {
+        if (!watchlist.length && !activeTopics.size) return items;
+        return items.filter(article => matchesWatchlist(article) && matchesTopics(article));
+    }
 
-        newsAnalysisPanel.innerHTML = `
-          <div class="news-card-title mb-1">${article.headline||""}</div>
-          <div class="news-meta mb-2">Stance: <span style="color:${stanceColor};font-weight:800;">${stance}</span> • Impact: <span style="text-transform:capitalize;">${impact}</span></div>
-          <div class="mb-2">${d.summary || article.summary || ""}</div>
-          ${bullets?`<div class="mb-2"><div class="analysis-section-title" style="font-size:1rem;">Why it matters</div><ul class="analysis-bullets">${bullets}</ul></div>`:""}
-          <div class="text-muted" style="font-size:.9rem;">${d.risk_notes||""}</div>
-          <div class="text-muted" style="font-size:.8rem;">${d.disclaimer||""}</div>
+    function renderWatchlistPills() {
+        if (!watchlistPills) return;
+        watchlistPills.innerHTML = '';
+        if (!watchlist.length) {
+            watchlistPills.innerHTML = '<span class="text-muted small">No watchlist yet.</span>';
+            return;
+        }
+        watchlist.forEach(item => {
+            const pill = document.createElement('span');
+            pill.className = 'watch-pill';
+
+            const label = document.createElement('span');
+            label.textContent = item;
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'watch-pill-remove';
+            removeBtn.dataset.remove = item;
+            removeBtn.textContent = '×';
+
+            pill.appendChild(label);
+            pill.appendChild(removeBtn);
+            watchlistPills.appendChild(pill);
+        });
+    }
+
+    function syncTopicChips() {
+        if (!topicChipBar) return;
+        const chips = topicChipBar.querySelectorAll('.topic-chip');
+        chips.forEach(chip => {
+            const topic = chip.dataset.topic;
+            if (topic === 'all') {
+                chip.classList.toggle('active', !activeTopics.size);
+            } else {
+                chip.classList.toggle('active', activeTopics.has(topic));
+            }
+        });
+    }
+
+    function rerenderNewsIfReady() {
+        if (allNews.length) {
+            renderNews(allNews);
+        }
+    }
+
+    function addWatchItem(value) {
+        const normalized = normalizeWatchValue(value);
+        if (!normalized) return;
+        if (watchlist.length >= 25) return;
+        if (watchlist.some(item => item.toLowerCase() === normalized.toLowerCase())) return;
+        watchlist.push(normalized);
+        persistWatchlist();
+        renderWatchlistPills();
+        rerenderNewsIfReady();
+    }
+
+    function removeWatchItem(value) {
+        watchlist = watchlist.filter(item => item !== value);
+        persistWatchlist();
+        renderWatchlistPills();
+        rerenderNewsIfReady();
+    }
+
+    async function fetchNews() {
+        newsListEl.innerHTML = `
+            <div class="text-center text-muted py-3 small">
+                Loading headlines...
+            </div>
         `;
-      }catch(e){
-        console.error(e);
-        newsAnalysisPanel.innerHTML = `<div class="text-danger">Analysis failed due to a network or server error.</div>`;
-      }
+        try {
+            const resp = await fetch('/api/news/headlines?limit=80');
+            const result = await resp.json();
+            if (!result.success) {
+                newsListEl.innerHTML = `
+                    <div class="text-center text-muted py-3 small">
+                        Failed to load news.
+                    </div>
+                `;
+                return;
+            }
+            allNews = Array.isArray(result.data) ? result.data : [];
+            renderNews(allNews);
+        } catch (err) {
+            console.error('News fetch error', err);
+            newsListEl.innerHTML = `
+                <div class="text-center text-muted py-3 small">
+                    Error loading news.
+                </div>
+            `;
+        }
     }
 
-    // Watchlist UI
-    const watchlistInput = document.getElementById("watchlistInput");
-    const addWatchBtn = document.getElementById("addWatchBtn");
-    const watchlistChips = document.getElementById("watchlistChips");
+    refreshNewsBtn?.addEventListener('click', fetchNews);
 
-    function addWatchItem(raw){
-      const v = (raw||"").trim();
-      if(!v) return;
-      if(!watchlist.includes(v)) watchlist.push(v);
-      renderWatchlistChips(); renderNewsLists();
-    }
-    function removeWatchItem(v){
-      watchlist = watchlist.filter(x=>x!==v);
-      renderWatchlistChips(); renderNewsLists();
-    }
-    function renderWatchlistChips(){
-      if(!watchlist.length){
-        watchlistChips.innerHTML = '<span class="text-muted">No watchlist yet.</span>';
-        return;
-      }
-      watchlistChips.innerHTML = watchlist.map(w=>`
-        <span class="watchlist-chip">${w}
-          <button class="btn btn-link p-0 m-0 text-decoration-none" data-remove="${w}" title="Remove">&times;</button>
-        </span>`).join("");
-    }
-    addWatchBtn.addEventListener("click", ()=>{ addWatchItem(watchlistInput.value); watchlistInput.value = ""; });
-    watchlistInput.addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); addWatchItem(watchlistInput.value); watchlistInput.value=""; }});
-    watchlistChips.addEventListener("click", (e)=>{
-      const btn = e.target.closest("button[data-remove]");
-      if(!btn) return;
-      removeWatchItem(btn.getAttribute("data-remove"));
+    watchAddBtn?.addEventListener('click', () => {
+        addWatchItem(watchInput.value);
+        watchInput.value = '';
     });
 
-    // Topic pills
-    const topicBar = document.getElementById("topicBar");
-    topicBar.addEventListener("click", (e)=>{
-      const pill = e.target.closest(".topic-pill");
-      if(!pill) return;
-      const key = pill.getAttribute("data-topic");
-      if(activeTopics.has(key)){ activeTopics.delete(key); pill.classList.remove("active"); }
-      else { activeTopics.add(key); pill.classList.add("active"); }
-      renderNewsLists();
+    watchInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            addWatchItem(watchInput.value);
+            watchInput.value = '';
+        }
     });
 
-    // Initial
-    renderWatchlistChips();
-    fetchNews();
-  </script>
+    watchlistPills?.addEventListener('click', (event) => {
+        const btn = event.target.closest('.watch-pill-remove');
+        if (!btn) return;
+        removeWatchItem(btn.dataset.remove || '');
+    });
+
+    topicChipBar?.addEventListener('click', (event) => {
+        const chip = event.target.closest('.topic-chip');
+        if (!chip) return;
+        const topic = chip.dataset.topic;
+        if (!topic) return;
+
+        if (topic === 'all') {
+            activeTopics.clear();
+        } else {
+            if (activeTopics.has(topic)) {
+                activeTopics.delete(topic);
+            } else {
+                activeTopics.add(topic);
+            }
+        }
+        persistTopics();
+        syncTopicChips();
+        rerenderNewsIfReady();
+    });
+
+    loadPersistedFilters();
+    renderWatchlistPills();
+    syncTopicChips();
+
+    function renderNews(items) {
+        const filteringActive = Boolean(watchlist.length || activeTopics.size);
+        const list = filteringActive ? applyNewsFilters(items) : items;
+
+        if (!list.length) {
+            newsListEl.innerHTML = `
+                <div class="text-center text-muted py-3 small">
+                    ${filteringActive ? 'No headlines match the current watchlist/topic filters.' : 'No headlines returned.'}
+                </div>
+            `;
+            return;
+        }
+
+        newsListEl.innerHTML = '';
+        list.forEach(article => {
+            const div = document.createElement('div');
+            div.className = 'list-group-item list-group-item-action bg-transparent text-reset';
+
+            const ts = article.published_ts ? new Date(article.published_ts * 1000) : null;
+            const timeStr = ts ? ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+            const tickers = (article.tickers || []).slice(0, 4).join(', ');
+
+            div.innerHTML = `
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="small text-muted mb-1">
+                            ${article.source || article.provider || 'Source'} • ${timeStr}
+                        </div>
+                        <div class="headline-title mb-1">${article.headline || ''}</div>
+                        <div class="headline-summary mb-2">
+                            ${article.summary ? article.summary.slice(0, 180) + (article.summary.length > 180 ? '…' : '') : ''}
+                        </div>
+                        ${
+                            tickers
+                                ? `<div class="small text-muted">Tickers: <span class="ticker-chip">${tickers}</span></div>`
+                                : ''
+                        }
+                    </div>
+                    <div class="ms-2 text-end">
+                        <button class="btn btn-sm btn-outline-info mb-2">AI Analysis</button>
+                        <div>
+                            <a href="${article.url || '#'}" target="_blank" class="small text-muted">Open</a>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const btn = div.querySelector('button');
+            btn.addEventListener('click', () => analyzeHeadline(article));
+
+            newsListEl.appendChild(div);
+        });
+    }
+
+    async function analyzeHeadline(article) {
+        const card = document.getElementById('news-analysis-card');
+        card.innerHTML = `
+            <div class="card-body">
+                <h5 class="mb-2">AI News Lens</h5>
+                <p class="text-muted small mb-2">Analyzing headline with trading focus…</p>
+                <div class="text-center py-3">
+                    <div class="spinner-border text-info" role="status" style="width: 1.8rem; height: 1.8rem;">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        try {
+            const resp = await fetch('/api/news/analysis', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ article })
+            });
+            const result = await resp.json();
+            if (!result.success) {
+                card.innerHTML = `
+                    <div class="card-body">
+                        <h5 class="mb-2">AI News Lens</h5>
+                        <p class="text-danger small mb-2">
+                            Analysis failed: ${result.error || 'Unknown error.'}
+                        </p>
+                        <p class="text-muted small mb-0">
+                            Click “AI Analysis” again or choose another headline.
+                        </p>
+                    </div>
+                `;
+                card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                return;
+            }
+
+            renderNewsAnalysis(article, result.data);
+            card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } catch (err) {
+            console.error('News analysis error', err);
+            card.innerHTML = `
+                <div class="card-body">
+                    <h5 class="mb-2">AI News Lens</h5>
+                    <p class="text-danger small mb-2">
+                        Analysis failed due to server error.
+                    </p>
+                    <p class="text-muted small mb-0">
+                        Try again in a moment.
+                    </p>
+                </div>
+            `;
+            card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    function renderNewsAnalysis(article, analysis) {
+        const card = document.getElementById('news-analysis-card');
+
+        const stance = (analysis.stance || 'neutral').toLowerCase();
+        const impact = (analysis.impact_level || 'medium').toLowerCase();
+
+        let stanceBadgeClass = 'badge-stance-neutral';
+        if (stance === 'bullish') stanceBadgeClass = 'badge-stance-bullish';
+        else if (stance === 'bearish') stanceBadgeClass = 'badge-stance-bearish';
+        else if (stance === 'mixed') stanceBadgeClass = 'badge-stance-mixed';
+
+        let impactBadgeClass = 'badge-impact-medium';
+        if (impact === 'low') impactBadgeClass = 'badge-impact-low';
+        else if (impact === 'high') impactBadgeClass = 'badge-impact-high';
+
+        const factors = Array.isArray(analysis.rationale) ? analysis.rationale : [];
+        const factorList = factors.length
+            ? factors.map(f => `<li>${f}</li>`).join('')
+            : '<li>No specific key factors returned.</li>';
+
+        const tickers = (article.tickers || []).slice(0, 4).join(', ');
+
+        card.innerHTML = `
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0">AI View: ${article.headline || ''}</h5>
+                    ${
+                        tickers
+                            ? `<small class="text-muted">Tickers: ${tickers}</small>`
+                            : ''
+                    }
+                </div>
+                <div class="text-end">
+                    <span class="badge ${stanceBadgeClass} me-1 text-uppercase small">${stance}</span>
+                    <span class="badge ${impactBadgeClass} text-uppercase small">${impact} impact</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <p class="small mb-2">${analysis.summary || ''}</p>
+
+                <h6 class="mt-3 mb-2">Key Factors (trader lens)</h6>
+                <ul class="small mb-3">
+                    ${factorList}
+                </ul>
+
+                <p class="small text-muted mb-1">${analysis.risk_notes || ''}</p>
+                <p class="small text-muted mb-0">${analysis.disclaimer || ''}</p>
+            </div>
+        `;
+    }
+
+    // ------------- History tab logic -------------
+    const historyTab = document.getElementById('history-tab');
+    const historySearchInput = document.getElementById('historySearch');
+    const historyProfileFilter = document.getElementById('historyProfileFilter');
+    const historyTierFilter = document.getElementById('historyTierFilter');
+    const historyResetFiltersBtn = document.getElementById('historyResetFilters');
+    const historyResultsCount = document.getElementById('historyResultsCount');
+    const historySortableHeaders = document.querySelectorAll('[data-history-sort]');
+    const historyAnalysisBody = document.getElementById('history-analysis-body');
+    let historyRowsRaw = [];
+    const historyFilters = { search: '', profile: '', tier: '' };
+    const historySort = { key: 'current_change_pct', direction: 'desc' };
+    const historyAscDefaultSortKeys = new Set(['ticker', 'last_profile', 'last_tier', 'first_date', 'last_date']);
+    let activeHistoryTicker = '';
+
+    async function fetchHistorySummary() {
+        const tbody = document.getElementById('history-table-body');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="9" class="text-center text-muted py-3">Loading history…</td>
+            </tr>
+        `;
+
+        try {
+            const resp = await fetch('/api/history/summary');
+            const result = await resp.json();
+            if (!result.success) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-3">Error loading history.</td>
+                    </tr>
+                `;
+                historyRowsRaw = [];
+                updateHistoryCount(0);
+                updateSortIndicators();
+                return;
+            }
+            historyRowsRaw = Array.isArray(result.data) ? result.data : [];
+            applyHistoryFilters();
+            return;
+        } catch (err) {
+            console.error('History summary error', err);
+            const tbody2 = document.getElementById('history-table-body');
+            tbody2.innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center text-muted py-3">Error loading history.</td>
+                </tr>
+            `;
+            historyRowsRaw = [];
+            updateHistoryCount(0);
+            updateSortIndicators();
+        }
+    }
+
+    function applyHistoryFilters() {
+        if (!historyRowsRaw.length) {
+            renderHistoryTable([]);
+            updateHistoryCount(0);
+            updateSortIndicators();
+            return;
+        }
+
+        let rows = historyRowsRaw.slice();
+        if (historyFilters.search) {
+            rows = rows.filter(row => {
+                const haystack = [
+                    row.ticker || '',
+                    row.last_profile || '',
+                    row.last_tier || ''
+                ].join(' ').toLowerCase();
+                return haystack.includes(historyFilters.search);
+            });
+        }
+        if (historyFilters.profile) {
+            rows = rows.filter(row =>
+                normalizeProfileValue(row.last_profile_key || row.last_profile) === historyFilters.profile
+            );
+        }
+        if (historyFilters.tier) {
+            rows = rows.filter(row =>
+                (row.last_tier || '').toLowerCase() === historyFilters.tier
+            );
+        }
+
+        rows = sortHistoryRows(rows);
+        renderHistoryTable(rows);
+        updateHistoryCount(rows.length);
+        updateSortIndicators();
+    }
+
+    function sortHistoryRows(rows) {
+        const multiplier = historySort.direction === 'asc' ? 1 : -1;
+        const key = historySort.key;
+        return rows.sort((a, b) => {
+            const valA = getSortValue(a, key);
+            const valB = getSortValue(b, key);
+            if (valA === valB) return 0;
+            return valA > valB ? multiplier : -multiplier;
+        });
+    }
+
+    function getSortValue(row, key) {
+        switch (key) {
+            case 'alerts':
+                return getNumericValue(row.alerts);
+            case 'last_entry':
+                return getNumericValue(row.last_entry);
+            case 'current_price':
+                return getNumericValue(row.current_price);
+            case 'current_change_pct':
+                return getNumericValue(row.current_change_pct);
+            case 'first_date':
+                return getDateValue(row.first_date);
+            case 'last_date':
+                return getDateValue(row.last_date);
+            case 'last_profile':
+            case 'last_tier':
+            case 'ticker':
+            default:
+                return ((row && row[key]) || '').toString().toLowerCase();
+        }
+    }
+
+    function getNumericValue(val) {
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+            const parsed = parseFloat(val.replace(/[^0-9.-]/g, ''));
+            return Number.isNaN(parsed) ? 0 : parsed;
+        }
+        return 0;
+    }
+
+    function getDateValue(val) {
+        if (!val) return 0;
+        const stamp = Date.parse(val);
+        return Number.isNaN(stamp) ? 0 : stamp;
+    }
+
+    function normalizeProfileValue(val) {
+        if (!val) return '';
+        return val.toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    }
+
+    function highlightHistoryRow(ticker) {
+        const rows = document.querySelectorAll('#history-table-body tr.history-table-row');
+        rows.forEach(row => {
+            if (!ticker) {
+                row.classList.remove('active');
+                return;
+            }
+            if (row.dataset.historyTicker === ticker) {
+                row.classList.add('active');
+            } else {
+                row.classList.remove('active');
+            }
+        });
+    }
+
+    function formatCurrency(val) {
+        if (val === null || val === undefined || Number.isNaN(val)) return '-';
+        const num = typeof val === 'number' ? val : parseFloat(val);
+        if (Number.isNaN(num)) return '-';
+        return '$' + num.toFixed(2);
+    }
+
+    function formatNumber(val) {
+        if (val === null || val === undefined || Number.isNaN(val)) return '-';
+        const num = typeof val === 'number' ? val : parseFloat(val);
+        if (Number.isNaN(num)) return '-';
+        return num.toLocaleString();
+    }
+
+    function formatPercent(val) {
+        if (val === null || val === undefined || Number.isNaN(val)) return '-';
+        const num = typeof val === 'number' ? val : parseFloat(val);
+        if (Number.isNaN(num)) return '-';
+        return (num >= 0 ? '+' : '') + num.toFixed(2) + '%';
+    }
+
+    function setHistoryAnalysisLoading(ticker) {
+        if (!historyAnalysisBody) return;
+        historyAnalysisBody.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="mb-0">${ticker}</h5>
+                    <small class="text-muted">Requesting full analysis…</small>
+                </div>
+                <div class="spinner-border text-info" role="status" style="width: 1.6rem; height: 1.6rem;"></div>
+            </div>
+        `;
+    }
+
+    function renderListMarkup(items, emptyCopy = 'No data.') {
+        if (!Array.isArray(items) || !items.length) {
+            return `<li class="text-muted">${emptyCopy}</li>`;
+        }
+        return items
+            .map(item => `<li>${item}</li>`)
+            .join('');
+    }
+
+    function ensureArray(val) {
+        if (Array.isArray(val)) return val;
+        if (val === undefined || val === null || val === '') return [];
+        return [val];
+    }
+
+    async function loadHistoryDeepDive(ticker) {
+        if (!ticker) return;
+        activeHistoryTicker = ticker;
+        highlightHistoryRow(ticker);
+        setHistoryAnalysisLoading(ticker);
+
+        try {
+            const resp = await fetch('/api/history/deep-dive', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ticker })
+            });
+            const result = await resp.json();
+            if (!result.success) {
+                historyAnalysisBody.innerHTML = `
+                    <p class="text-danger small mb-0">
+                        Unable to load AI analysis: ${result.error || 'Unknown error'}.
+                    </p>
+                `;
+                return;
+            }
+            renderHistoryDeepDive(result.data || {});
+        } catch (err) {
+            console.error('History deep dive error', err);
+            if (historyAnalysisBody) {
+                historyAnalysisBody.innerHTML = `
+                    <p class="text-danger small mb-0">Network error requesting analysis.</p>
+                `;
+            }
+        }
+    }
+
+    function renderMomentumCards(momentumItems) {
+        if (!Array.isArray(momentumItems) || !momentumItems.length) {
+            return '<p class="text-muted small mb-0">No momentum signals highlighted.</p>';
+        }
+        return `
+            <div class="row g-2">
+                ${momentumItems.map(item => `
+                    <div class="col-12 col-md-6">
+                        <div class="border rounded-3 p-2 h-100">
+                            <div class="small text-muted">${item.indicator || 'Indicator'}</div>
+                            <div class="fw-semibold">${item.reading || 'n/a'}</div>
+                            <div class="small text-${(item.bias || '').toLowerCase() === 'bullish' ? 'success' : (item.bias || '').toLowerCase() === 'bearish' ? 'danger' : 'muted'}">
+                                ${item.bias || ''}
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function renderHistoryDeepDive(payload) {
+        if (!historyAnalysisBody) return;
+        const ticker = payload.ticker || activeHistoryTicker || '';
+        const snapshot = payload.snapshot || {};
+        const analysis = payload.analysis || {};
+        const stance = (analysis.stance || 'neutral').toLowerCase();
+        const stanceClass = stance === 'bullish'
+            ? 'badge-stance-bullish'
+            : stance === 'bearish'
+                ? 'badge-stance-bearish'
+                : 'badge-stance-neutral';
+
+        const levels = analysis.levels || {};
+        const volumeNotes = analysis.volume || {};
+        const actionPlan = analysis.action_plan || {};
+        const entries = ensureArray(actionPlan.entries);
+        const targets = ensureArray(actionPlan.targets);
+        const stops = ensureArray(actionPlan.stops);
+
+        historyAnalysisBody.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="mb-0">${ticker}</h5>
+                    <span class="badge ${stanceClass} text-uppercase small">${analysis.stance || 'NEUTRAL'}</span>
+                </div>
+                <div class="text-end small text-muted">
+                    Current: ${formatCurrency(snapshot.current)}<br>
+                    Change: ${formatPercent(snapshot.change_pct)}
+                </div>
+            </div>
+
+            <p class="small mb-3">${analysis.summary || 'No AI summary returned.'}</p>
+
+            <div class="row g-3 mb-3">
+                <div class="col-6 col-md-3">
+                    <div class="small text-muted">Open</div>
+                    <div class="fw-semibold">${formatCurrency(snapshot.open)}</div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="small text-muted">High / Low</div>
+                    <div class="fw-semibold">${formatCurrency(snapshot.high)} / ${formatCurrency(snapshot.low)}</div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="small text-muted">10d / 30d Avg Vol</div>
+                    <div class="fw-semibold">
+                        ${formatNumber(snapshot.avg_volume_10d)} / ${formatNumber(snapshot.avg_volume_30d)}
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="small text-muted">Market Cap</div>
+                    <div class="fw-semibold">${formatNumber(snapshot.market_cap)}</div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <h6 class="mb-1">Catalysts</h6>
+                <ul class="small mb-0">
+                    ${renderListMarkup(analysis.catalysts, 'No catalysts highlighted.')}
+                </ul>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-12 col-lg-6">
+                    <h6 class="mb-1">Support Levels</h6>
+                    <ul class="small mb-2">
+                        ${renderListMarkup(levels.support_zones, 'No support zones noted.')}
+                    </ul>
+                    <p class="small mb-0"><strong>Immediate:</strong> ${levels.immediate_support || 'n/a'}</p>
+                </div>
+                <div class="col-12 col-lg-6">
+                    <h6 class="mb-1">Resistance Levels</h6>
+                    <ul class="small mb-2">
+                        ${renderListMarkup(levels.resistance_zones, 'No resistance zones noted.')}
+                    </ul>
+                    <p class="small mb-0"><strong>Immediate:</strong> ${levels.immediate_resistance || 'n/a'}</p>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <h6 class="mb-1">Momentum & Indicators</h6>
+                ${renderMomentumCards(analysis.momentum)}
+            </div>
+
+            <div class="mb-3">
+                <h6 class="mb-1">Volume Context</h6>
+                <p class="small mb-1">${volumeNotes.today_vs_avg || 'No volume comparison.'}</p>
+                <p class="small text-muted mb-0">${volumeNotes.notes || ''}</p>
+            </div>
+
+            <div class="mb-3">
+                <h6 class="mb-1">Action Plan</h6>
+                <p class="small mb-1"><strong>Bias:</strong> ${actionPlan.bias || 'n/a'}</p>
+                <p class="small mb-1"><strong>Entries:</strong> ${entries.join(', ') || 'n/a'}</p>
+                <p class="small mb-1"><strong>Targets:</strong> ${targets.join(', ') || 'n/a'}</p>
+                <p class="small mb-0"><strong>Stops:</strong> ${stops.join(', ') || 'n/a'}</p>
+            </div>
+
+            <div class="mb-3">
+                <h6 class="mb-1">Future View</h6>
+                <p class="small mb-0">${analysis.future_view || 'No forward-looking commentary.'}</p>
+            </div>
+
+            <div class="mb-3">
+                <h6 class="mb-1">Risk Notes</h6>
+                <p class="small mb-0">${analysis.risk_notes || 'Risks not provided.'}</p>
+            </div>
+
+            <p class="text-muted small mb-0">${analysis.disclaimer || 'This is not personalized financial advice.'}</p>
+        `;
+    }
+    function renderHistoryTable(rows) {
+        const tbody = document.getElementById('history-table-body');
+        if (!rows.length) {
+            activeHistoryTicker = '';
+            const message = historyRowsRaw.length
+                ? 'No matches for the current filters.'
+                : 'No alerts recorded yet. Run the scanner to build history.';
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center text-muted py-3">
+                        ${message}
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = '';
+        rows.forEach(r => {
+            const ticker = r.ticker || '';
+            const alerts = r.alerts || 0;
+            const lastProfile = r.last_profile || '';
+            const lastTier = r.last_tier || '';
+            const lastEntry = (typeof r.last_entry === 'number') ? r.last_entry.toFixed(2) : (r.last_entry || '-');
+            const currentPrice = (typeof r.current_price === 'number') ? r.current_price.toFixed(2) : (r.current_price || '-');
+            const pct = (typeof r.current_change_pct === 'number') ? r.current_change_pct.toFixed(2) + '%' : '-';
+            const firstDate = r.first_date || '';
+            const lastDate = r.last_date || '';
+
+            const tr = document.createElement('tr');
+            tr.classList.add('history-table-row');
+            tr.dataset.historyTicker = ticker;
+            tr.innerHTML = `
+                <td><span class="ticker-chip">${ticker}</span></td>
+                <td>${alerts}</td>
+                <td>${lastProfile}</td>
+                <td>${lastTier}</td>
+                <td>${lastEntry === '-' ? '-' : '$' + lastEntry}</td>
+                <td>${currentPrice === '-' ? '-' : '$' + currentPrice}</td>
+                <td>${pct}</td>
+                <td>${firstDate}</td>
+                <td>${lastDate}</td>
+            `;
+            tr.addEventListener('click', () => {
+                loadHistoryDeepDive(ticker);
+            });
+            if (activeHistoryTicker && ticker === activeHistoryTicker) {
+                tr.classList.add('active');
+            }
+            tbody.appendChild(tr);
+        });
+        highlightHistoryRow(activeHistoryTicker);
+    }
+
+    function updateHistoryCount(visibleCount) {
+        if (!historyResultsCount) return;
+        const total = historyRowsRaw.length;
+        if (!total) {
+            historyResultsCount.textContent = 'No history yet';
+            return;
+        }
+        historyResultsCount.textContent = `Showing ${visibleCount} / ${total}`;
+    }
+
+    function updateSortIndicators() {
+        historySortableHeaders.forEach(header => {
+            header.classList.remove('sorted-asc', 'sorted-desc');
+            if (header.dataset.historySort === historySort.key) {
+                header.classList.add(
+                    historySort.direction === 'asc' ? 'sorted-asc' : 'sorted-desc'
+                );
+            }
+        });
+    }
+
+    function resetHistoryFilters() {
+        historyFilters.search = '';
+        historyFilters.profile = '';
+        historyFilters.tier = '';
+        if (historySearchInput) historySearchInput.value = '';
+        if (historyProfileFilter) historyProfileFilter.value = '';
+        if (historyTierFilter) historyTierFilter.value = '';
+        applyHistoryFilters();
+    }
+
+    historySearchInput?.addEventListener('input', (event) => {
+        historyFilters.search = event.target.value.trim().toLowerCase();
+        applyHistoryFilters();
+    });
+
+    historyProfileFilter?.addEventListener('change', (event) => {
+        historyFilters.profile = event.target.value ? event.target.value.toLowerCase() : '';
+        applyHistoryFilters();
+    });
+
+    historyTierFilter?.addEventListener('change', (event) => {
+        historyFilters.tier = event.target.value ? event.target.value.toLowerCase() : '';
+        applyHistoryFilters();
+    });
+
+    historyResetFiltersBtn?.addEventListener('click', () => {
+        resetHistoryFilters();
+    });
+
+    historySortableHeaders.forEach(header => {
+        header.addEventListener('click', () => {
+            const key = header.dataset.historySort;
+            if (!key) return;
+            if (historySort.key === key) {
+                historySort.direction = historySort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                historySort.key = key;
+                historySort.direction = historyAscDefaultSortKeys.has(key) ? 'asc' : 'desc';
+            }
+            applyHistoryFilters();
+        });
+    });
+
+    historyTab.addEventListener('shown.bs.tab', () => {
+        fetchHistorySummary();
+    });
+
+    // No auto load for scanner/news; you trigger them manually with buttons.
+</script>
 </body>
 </html>

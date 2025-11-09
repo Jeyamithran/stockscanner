@@ -11,3 +11,6 @@ venv/
 # Flask/Gunicorn logs and runtime files
 *.log
 .DS_Store
+
+# Local runtime artifacts
+instance/
