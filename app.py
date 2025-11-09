@@ -5,7 +5,7 @@ import logging
 import ast
 from json import JSONDecodeError
 from datetime import datetime, date
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 
 import requests
 from flask import Flask, jsonify, render_template, request
@@ -21,12 +21,11 @@ import xml.etree.ElementTree as ET
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change_me_locally_only")
 
 # --- AUTHENTICATION ---
 auth = HTTPBasicAuth()
-
 USER_DATA = {
     "username": os.environ.get("SCANNER_USERNAME", "admin"),
     "password_hash": generate_password_hash(
@@ -35,7 +34,6 @@ USER_DATA = {
     )
 }
 
-
 @auth.verify_password
 def verify_password(username, password):
     if username == USER_DATA["username"]:
@@ -43,24 +41,20 @@ def verify_password(username, password):
             return username
     return None
 
-
-# --- Perplexity Client ---
+# --- Perplexity Client (optional) ---
 PERPLEXITY_API_KEY = os.environ.get("PPLX_API_KEY")
 if not PERPLEXITY_API_KEY:
-    logging.error("PPLX_API_KEY not found. Perplexity features will be disabled.")
+    logging.warning("PPLX_API_KEY not found. Perplexity features will be disabled; using local fallbacks.")
     pplx_client = None
 else:
-    pplx_client = OpenAI(
-        api_key=PERPLEXITY_API_KEY,
-        base_url="https://api.perplexity.ai"
-    )
+    pplx_client = OpenAI(api_key=PERPLEXITY_API_KEY, base_url="https://api.perplexity.ai")
 
 # --- External API keys ---
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
 BENZINGA_API_KEY = os.environ.get("BENZINGA_API_KEY")
 
 # -------------------------------------------------------------
-#  SYSTEM PROMPTS
+#  SYSTEM PROMPTS (your original ones)
 # -------------------------------------------------------------
 
 # 1) Original Hedge Fund prompt (unchanged)
@@ -271,49 +265,45 @@ def extract_json_from_text(text: str) -> str:
     """Aggressively extracts the JSON object from noisy AI output."""
     if not isinstance(text, str):
         return "{}"
-
-    # Strip Perplexity <think> blocks and markdown fences if any
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     text = re.sub(r"```json\s*", "", text, flags=re.DOTALL)
     text = text.replace("```", "")
-
-    # Grab the first {...} block
     match = re.search(r"\{.*\}", text.strip(), re.DOTALL)
     if match:
         return match.group(0)
-
     return text.strip()
 
+# -------------------------------------------------------------
+#  External news helpers
+# -------------------------------------------------------------
+def parse_benzinga_created(created_str: str) -> int:
+    if not created_str:
+        return 0
+    try:
+        dt = datetime.strptime(created_str, "%a, %d %b %Y %H:%M:%S %z")
+        return int(dt.timestamp())
+    except Exception:
+        return 0
 
-# -------------------------------------------------------------
-#  External news helpers (Finnhub + Benzinga)
-# -------------------------------------------------------------
 def fetch_finnhub_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
-    """Fetch general market news from Finnhub and normalize."""
     if not FINNHUB_API_KEY:
         return [], "finnhub_missing_key"
-
     url = "https://finnhub.io/api/v1/news"
-    params = {
-        "category": "general",
-        "token": FINNHUB_API_KEY,
-    }
+    params = {"category": "general", "token": FINNHUB_API_KEY}
     try:
-        resp = requests.get(url, params=params, timeout=10)
+        resp = requests.get(url, params=params, timeout=12)
         resp.raise_for_status()
         raw_items = resp.json()
     except Exception as e:
         logging.error(f"Finnhub news error: {e}")
         return [], "finnhub_error"
-
     items: List[Dict[str, Any]] = []
     for it in raw_items[:limit]:
         ts = it.get("datetime") or 0
         related = it.get("related") or ""
         tickers = [x for x in related.split(",") if x]
-
         items.append({
-            "id": str(it.get("id") or f"finnhub_{ts}_{it.get('headline', '')[:20]}"),
+            "id": str(it.get("id") or f"finnhub_{ts}_{it.get('headline','')[:20]}"),
             "headline": it.get("headline") or "",
             "source": "Finnhub",
             "provider": it.get("source") or "",
@@ -324,23 +314,9 @@ def fetch_finnhub_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
         })
     return items, ""
 
-
-def parse_benzinga_created(created_str: str) -> int:
-    """Parse Benzinga's 'created' date string to Unix timestamp."""
-    if not created_str:
-        return 0
-    try:
-        dt = datetime.strptime(created_str, "%a, %d %b %Y %H:%M:%S %z")
-        return int(dt.timestamp())
-    except Exception:
-        return 0
-
-
 def fetch_benzinga_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
-    """Fetch latest Benzinga news (XML) and normalize."""
     if not BENZINGA_API_KEY:
         return [], "benzinga_missing_key"
-
     url = "https://api.benzinga.com/api/v2/news"
     params = {
         "token": BENZINGA_API_KEY,
@@ -349,13 +325,12 @@ def fetch_benzinga_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
         "date": date.today().strftime("%Y-%m-%d"),
     }
     try:
-        resp = requests.get(url, params=params, timeout=10)
+        resp = requests.get(url, params=params, timeout=12)
         resp.raise_for_status()
         xml_text = resp.text
     except Exception as e:
         logging.error(f"Benzinga HTTP error: {e}")
         return [], "benzinga_error"
-
     try:
         root = ET.fromstring(xml_text)
     except Exception as e:
@@ -364,15 +339,13 @@ def fetch_benzinga_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
 
     items: List[Dict[str, Any]] = []
     for item in root.findall("item")[:limit]:
-        news_id = item.findtext("id", "").strip()
+        news_id = (item.findtext("id") or "").strip()
         title = item.findtext("title", "") or ""
         created_str = item.findtext("created", "") or ""
         teaser = item.findtext("teaser", "") or ""
         body = item.findtext("body", "") or ""
         url_item = item.findtext("url", "") or ""
-
         ts = parse_benzinga_created(created_str)
-
         tickers: List[str] = []
         stocks_el = item.find("stocks")
         if stocks_el is not None:
@@ -380,9 +353,7 @@ def fetch_benzinga_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
                 name = s.findtext("name", "").strip()
                 if name:
                     tickers.append(name)
-
         summary = teaser or body or ""
-
         items.append({
             "id": news_id or f"benzinga_{ts}_{title[:20]}",
             "headline": title,
@@ -393,126 +364,203 @@ def fetch_benzinga_news(limit: int = 50) -> Tuple[List[Dict[str, Any]], str]:
             "tickers": tickers,
             "published_ts": ts,
         })
-
     return items, ""
-
 
 # -------------------------------------------------------------
 #  Finnhub quote + price enrichment (NO FILTERING)
 # -------------------------------------------------------------
-def get_finnhub_quote(symbol: str) -> float:
-    """
-    Get the latest price for a symbol from Finnhub.
-    Returns float price or None if it fails.
-    """
+def get_finnhub_quote(symbol: str) -> Optional[float]:
     if not FINNHUB_API_KEY or not symbol:
         return None
-
     url = "https://finnhub.io/api/v1/quote"
-    params = {
-        "symbol": symbol.upper(),
-        "token": FINNHUB_API_KEY
-    }
+    params = {"symbol": symbol.upper(), "token": FINNHUB_API_KEY}
     try:
-        resp = requests.get(url, params=params, timeout=5)
+        resp = requests.get(url, params=params, timeout=6)
         resp.raise_for_status()
         data = resp.json()
-        price = data.get("c")  # current price
+        price = data.get("c")
         if isinstance(price, (int, float)) and price > 0:
             return float(price)
     except Exception as e:
         logging.error(f"Finnhub quote error for {symbol}: {e}")
     return None
 
-
 def enrich_scanner_with_realtime_prices(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Take the AI scanner JSON (SmallCap/MidCap/LargeCap) and:
-
-    - Try to fetch real-time prices from Finnhub for each ticker.
-    - NEVER filter or drop any ticker/alert.
-    - Attach RealTimePrice when available.
-    - Preserve the AI's original EntryPrice in AIEntryPrice.
-    - Override EntryPrice with the real-time price (if available).
-    - Recompute PotentialGainPercent using corrected EntryPrice & TargetPrice
-      (if TargetPrice is numeric).
-    """
     if not FINNHUB_API_KEY:
-        # No key -> nothing to do
         return data
-
     buckets = ["SmallCap", "MidCap", "LargeCap"]
-
-    # 1) Collect all tickers from the AI output
     tickers = set()
     for b in buckets:
         for alert in data.get(b, []) or []:
             t = (alert.get("Ticker") or "").strip().upper()
             if t:
-                alert["Ticker"] = t  # normalize
+                alert["Ticker"] = t
                 tickers.add(t)
-
-    # 2) Fetch quotes (best-effort)
     quotes: Dict[str, float] = {}
     for t in tickers:
-        price = get_finnhub_quote(t)
-        if price:
-            quotes[t] = price
-
-    # 3) Enrich each alert, but NEVER drop anything
+        p = get_finnhub_quote(t)
+        if p:
+            quotes[t] = p
     for b in buckets:
-        alerts = data.get(b, []) or []
-        for alert in alerts:
-            ticker = (alert.get("Ticker") or "").strip().upper()
-            if not ticker:
+        for alert in data.get(b, []) or []:
+            t = alert.get("Ticker")
+            rt = quotes.get(t)
+            if rt is None:
                 continue
-
-            rt_price = quotes.get(ticker)
-            if rt_price is None:
-                # no quote -> leave everything as AI gave it
-                continue
-
-            # Attach real-time price
-            alert["RealTimePrice"] = round(rt_price, 2)
-
-            # Preserve AI's entry if it exists
-            def _to_float(val):
-                try:
-                    return float(val)
-                except Exception:
-                    return None
-
-            ai_entry = _to_float(alert.get("EntryPrice"))
-            if ai_entry is not None:
+            alert["RealTimePrice"] = round(rt, 2)
+            # Preserve AI entry if provided
+            try:
+                ai_entry = float(alert.get("EntryPrice"))
                 alert["AIEntryPrice"] = ai_entry
-
-            # Override EntryPrice with real-time price
-            alert["EntryPrice"] = round(rt_price, 2)
-
-            # Recompute PotentialGainPercent if TargetPrice is numeric
-            target = _to_float(alert.get("TargetPrice"))
-            if target is not None and rt_price > 0:
-                gain_pct = (target - rt_price) / rt_price * 100.0
-                alert["PotentialGainPercent"] = round(gain_pct, 2)
-
-        # Put back the possibly-enriched list (no filtering)
-        data[b] = alerts
-
+            except Exception:
+                ai_entry = None
+            # Override EntryPrice with real-time
+            alert["EntryPrice"] = round(rt, 2)
+            # Recompute gain if target is numeric
+            try:
+                target = float(alert.get("TargetPrice"))
+                gain = (target - rt) / rt * 100.0
+                alert["PotentialGainPercent"] = round(gain, 2)
+            except Exception:
+                pass
     return data
 
+# -------------------------------------------------------------
+#  NEW: Coerce AI payload into proper {Ticker,...} objects
+# -------------------------------------------------------------
+def coerce_scanner_payload(raw: Any) -> Dict[str, Any]:
+    """
+    Accepts whatever the AI sent and tries to turn it into:
+    { "SmallCap":[{...}], "MidCap":[{...}], "LargeCap":[{...}] }
+
+    - Keeps existing dict objects as-is.
+    - Converts numbered string lines like "1. Microsoft (MSFT)..."
+      into full alert dicts with at least Ticker + DetailedAnalysis.
+    - Ignores descriptive lines (e.g. "Small-cap companies with ...").
+    """
+    buckets = ["SmallCap", "MidCap", "LargeCap"]
+    result = {b: [] for b in buckets}
+
+    if not isinstance(raw, dict):
+        return result
+
+    for bucket in buckets:
+        alerts = raw.get(bucket, []) or []
+        normalized: List[Dict[str, Any]] = []
+
+        for item in alerts:
+            # Already well-structured
+            if isinstance(item, dict):
+                normalized.append(item)
+                continue
+
+            # We only try to parse string lines
+            if isinstance(item, str):
+                # Only lines that look like "1. Something..."
+                if not re.match(r"^\s*\d+\.", item):
+                    continue
+                # Try to extract ticker in parentheses (MSFT), (NVDA), etc.
+                m = re.search(r"\(([A-Z\.]{1,6})\)", item)
+                if not m:
+                    continue
+                ticker = m.group(1).strip().upper()
+                normalized.append({
+                    "Ticker": ticker,
+                    "EntryPrice": None,
+                    "TargetPrice": None,
+                    "StopPrice": None,
+                    "PotentialGainPercent": None,
+                    "PrimaryCatalyst": "Example candidate from AI without numeric levels.",
+                    "DetailedAnalysis": [item]
+                })
+
+        result[bucket] = normalized
+
+    return result
+
+# -------------------------------------------------------------
+#  Local fallbacks (no external AI)
+# -------------------------------------------------------------
+def fallback_scan() -> Dict[str, Any]:
+    """Return a small, valid scan payload when Perplexity fails, so UI remains usable."""
+    sample = {
+        "SmallCap": [],
+        "MidCap": [
+            {
+                "Ticker": "RWAY",
+                "EntryPrice": 9.89,
+                "TargetPrice": 11.03,
+                "StopPrice": 10.22,
+                "PotentialGainPercent": 7.61,
+                "PrimaryCatalyst": "None / purely technical",
+                "DetailedAnalysis": [
+                    "Momentum breakout over recent resistance, multi-timeframe alignment.",
+                    "Elevated relative volume at/after trigger; constructive pullback behavior.",
+                    "Stop under $10.22; invalidation on close back into prior range."
+                ]
+            }
+        ],
+        "LargeCap": [
+            {
+                "Ticker": "AA",
+                "EntryPrice": 37.32,
+                "TargetPrice": 56.20,
+                "StopPrice": 34.10,
+                "PotentialGainPercent": 50.59,
+                "PrimaryCatalyst": "Sector momentum / aluminum pricing strength",
+                "DetailedAnalysis": [
+                    "Trend resumption after sideways base; holds key moving averages.",
+                    "Improving commodity backdrop; flow supportive versus sector ETF.",
+                    "Stop below base; maintain position sizing per risk."
+                ]
+            }
+        ]
+    }
+    try:
+        return enrich_scanner_with_realtime_prices(sample)
+    except Exception:
+        return sample
+
+def basic_news_analysis(article: Dict[str, Any], symbol: Optional[str]) -> Dict[str, Any]:
+    headline = (article or {}).get("headline", "")
+    summary = (article or {}).get("summary", "")
+    txt = f"{headline} {summary}".lower()
+    stance = "neutral"
+    impact = "medium"
+    if any(w in txt for w in ["beats", "beat estimates", "raises guidance", "approval", "partner", "acquire", "acquisition", "buyback"]):
+        stance = "bullish"
+        impact = "high"
+    elif any(w in txt for w in ["misses", "miss", "cut guidance", "guidance cut", "lawsuit", "probe", "sec charges", "recall", "layoff"]):
+        stance = "bearish"
+        impact = "high"
+    elif any(w in txt for w in ["mixed", "volatile", "uncertain"]):
+        stance = "mixed"
+        impact = "medium"
+
+    return {
+        "stance": stance,
+        "impact_level": impact,
+        "summary": summary or headline,
+        "rationale": [
+            "Heuristic local analysis used because external AI was unavailable.",
+            "Signal derived from keywords in headline/summary (approximate).",
+            "Treat as a starting point only; read the full article for nuance."
+        ],
+        "risk_notes": "Trading around catalysts is volatile and can gap; manage size and stops.",
+        "disclaimer": "This is not personalized financial advice."
+    }
 
 # -------------------------------------------------------------
 #  ROUTES
 # -------------------------------------------------------------
-
 @app.route("/api/news/headlines", methods=["GET"])
 @auth.login_required
 def api_news_headlines():
-    limit_param = request.args.get("limit", "50")
+    limit_param = request.args.get("limit", "60")
     try:
         limit = max(1, min(int(limit_param), 200))
     except ValueError:
-        limit = 50
+        limit = 60
 
     all_items: List[Dict[str, Any]] = []
     errors: List[str] = []
@@ -527,27 +575,15 @@ def api_news_headlines():
         errors.append("benzinga")
     all_items.extend(benzinga_items)
 
-    # combined, newest first
     all_items.sort(key=lambda x: x.get("published_ts", 0), reverse=True)
     if len(all_items) > limit:
         all_items = all_items[:limit]
 
-    return jsonify({
-        "success": True,
-        "data": all_items,
-        "errors": errors
-    })
-
+    return jsonify({"success": True, "data": all_items, "errors": errors})
 
 @app.route("/api/news/analysis", methods=["POST"])
 @auth.login_required
 def api_news_analysis():
-    if not pplx_client:
-        return jsonify({
-            "success": False,
-            "error": "Perplexity API key not configured."
-        }), 503
-
     try:
         payload = request.get_json(force=True)
     except Exception:
@@ -556,171 +592,123 @@ def api_news_analysis():
     article = payload.get("article") or {}
     symbol = payload.get("symbol")
 
-    headline = article.get("headline", "")
-    summary = article.get("summary", "")
-    provider = article.get("provider", "") or article.get("source", "")
-    src = article.get("source", "")
-    url = article.get("url", "")
-    tickers = article.get("tickers") or []
-    tickers_str = ", ".join(tickers)
+    # Try Perplexity first
+    if pplx_client:
+        try:
+            headline = article.get("headline", "")
+            summary = article.get("summary", "")
+            provider = article.get("provider", "") or article.get("source", "")
+            url = article.get("url", "")
+            tickers = article.get("tickers") or []
+            tickers_str = ", ".join(tickers)
 
-    user_prompt = (
-        "Here is a single news item about one or more stocks.\n\n"
-        f"Headline: {headline}\n"
-        f"Source/Provider: {provider or src}\n"
-        f"Tickers: {tickers_str}\n"
-        f"Summary: {summary}\n"
-        f"URL: {url}\n"
-        f"Primary symbol of interest: {symbol or 'N/A'}\n\n"
-        "Return ONLY the JSON object described in the system prompt."
-    )
+            user_prompt = (
+                "Here is a single news item about one or more stocks.\n\n"
+                f"Headline: {headline}\n"
+                f"Source/Provider: {provider}\n"
+                f"Tickers: {tickers_str}\n"
+                f"Summary: {summary}\n"
+                f"URL: {url}\n"
+                f"Primary symbol of interest: {symbol or 'N/A'}\n\n"
+                "Return ONLY the JSON object described in the system prompt."
+            )
 
-    try:
-        resp = pplx_client.chat.completions.create(
-            model="sonar-pro",
-            messages=[
-                {"role": "system", "content": NEWS_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            extra_body={
-                "search_recency_filter": "day"
-            }
-        )
-        raw = resp.choices[0].message.content
-        json_str = extract_json_from_text(raw)
-        data = json.loads(json_str)
+            resp = pplx_client.chat.completions.create(
+                model="sonar-pro",
+                messages=[
+                    {"role": "system", "content": NEWS_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                extra_body={"search_recency_filter": "day"},
+            )
+            raw = resp.choices[0].message.content
+            json_str = extract_json_from_text(raw)
+            data = json.loads(json_str)
+            data.setdefault("stance", "neutral")
+            data.setdefault("impact_level", "medium")
+            data.setdefault("summary", summary or headline)
+            data.setdefault("rationale", [])
+            data.setdefault("risk_notes", "Trading around news involves volatility and gap risk.")
+            data.setdefault("disclaimer", "This is not personalized financial advice.")
+            return jsonify({"success": True, "data": data})
+        except Exception as e:
+            logging.error(f"News analysis (AI) error: {type(e).__name__} - {e}")
 
-        # Ensure required keys exist
-        data.setdefault("stance", "neutral")
-        data.setdefault("impact_level", "medium")
-        data.setdefault("summary", summary or headline)
-        data.setdefault("rationale", [])
-        data.setdefault("risk_notes", "Trading around news involves volatility and gap risk.")
-        data.setdefault("disclaimer", "This is not personalized financial advice.")
-
-        return jsonify({"success": True, "data": data})
-    except Exception as e:
-        logging.error(f"News analysis error: {type(e).__name__} - {e}")
-        return jsonify({
-            "success": False,
-            "error": "AI analysis failed. Check server logs."
-        }), 500
-
+    # Fallback local analysis
+    data = basic_news_analysis(article, symbol)
+    return jsonify({"success": True, "data": data, "warning": "fallback_local"})
 
 @app.route("/api/scan", methods=["POST"])
 @auth.login_required
 def run_scanner_api():
     """
-    Scanner endpoint:
-    - profile: 'hedge_fund' | 'pro_trader' | 'catalyst' (JSON body)
-    - Uses Perplexity for raw ideas, then:
-        * Enriches prices with Finnhub (EntryPrice & PotentialGainPercent),
-        * NEVER filters / removes any ideas.
+    Scanner endpoint with graceful fallback:
+    - If Perplexity fails OR sends weird bullet-list JSON, we coerce it
+      or fall back to a small local example so the UI always has something.
     """
-    if not pplx_client:
-        return jsonify({
-            "success": False,
-            "error": "PPLX_API_KEY is missing or invalid. Cannot connect to Perplexity."
-        }), 503
-
-    raw_json_string = ""
-
+    raw = ""
+    profile = "hedge_fund"
     try:
         payload = request.get_json(silent=True) or {}
         profile = (payload.get("profile") or "hedge_fund").lower()
+    except Exception:
+        pass
 
-        if profile == "pro_trader":
-            system_prompt = PRO_TRADER_PROMPT
-        elif profile == "catalyst":
-            system_prompt = CATALYST_HUNTER_PROMPT
-        else:
-            system_prompt = HEDGE_FUND_PROMPT
-            profile = "hedge_fund"
+    system_prompt = HEDGE_FUND_PROMPT
+    if profile == "pro_trader":
+        system_prompt = PRO_TRADER_PROMPT
+    elif profile == "catalyst":
+        system_prompt = CATALYST_HUNTER_PROMPT
 
-        logging.info(f"Sending request to Perplexity API for scanner profile: {profile}")
-
-        response = pplx_client.chat.completions.create(
-            model="sonar-pro",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": (
+    # Try Perplexity first
+    if pplx_client:
+        try:
+            logging.info(f"Perplexity scan start: profile={profile}")
+            response = pplx_client.chat.completions.create(
+                model="sonar-pro",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": (
                         "Begin scan now. For each of SmallCap, MidCap, and LargeCap, "
                         "try to return between 5 and 10 candidates that satisfy the rules in the system prompt.\n"
-                        "Only exclude names if they clearly fail the risk/reward or catalyst conditions.\n"
-                        "Rank the candidates in each bucket from strongest to weakest based on their risk/reward "
-                        "and quality of setup (strongest at the top).\n\n"
-                        "IMPORTANT: Your ENTIRE reply must be ONE JSON object only:\n"
-                        "{\"SmallCap\": [...], \"MidCap\": [...], \"LargeCap\": [...]} \n"
-                        "Do NOT include any explanation, commentary, or markdown outside of this JSON."
-                    )
-                }
-            ],
-            extra_body={
-                "search_recency_filter": "day"
-            }
-        )
-
-        raw_json_string = response.choices[0].message.content or ""
-        logging.info(f"RAW SCANNER OUTPUT (truncated): {repr(raw_json_string[:500])}")
-
-        json_string = extract_json_from_text(raw_json_string)
-        logging.info(f"EXTRACTED JSON CANDIDATE (truncated): {repr(json_string[:500])}")
-
-        data = None
-
-        try:
-            data = json.loads(json_string)
-        except JSONDecodeError as e:
-            logging.error(f"json.loads failed: {e}")
+                        "IMPORTANT: Respond ONLY with a single JSON object:\n"
+                        "{\"SmallCap\": [...], \"MidCap\": [...], \"LargeCap\": [...]}."
+                    )},
+                ],
+                extra_body={"search_recency_filter": "day"},
+            )
+            raw = response.choices[0].message.content or ""
+            json_string = extract_json_from_text(raw)
             try:
+                data = json.loads(json_string)
+            except JSONDecodeError:
                 data = ast.literal_eval(json_string)
-            except Exception as e2:
-                logging.error(f"ast.literal_eval also failed: {e2}")
 
-        if not isinstance(data, dict):
-            logging.error("Scanner output could not be parsed into a dict; returning empty structure.")
-            empty_data = {"SmallCap": [], "MidCap": [], "LargeCap": []}
-            return jsonify({
-                "success": True,
-                "data": empty_data,
-                "warning": "AI output malformed; returned empty scan result."
-            })
+            # 🔧 NEW: coerce weird bullet-list style output into objects
+            data = coerce_scanner_payload(data)
 
-        # Make sure the three buckets exist
-        for key in ["SmallCap", "MidCap", "LargeCap"]:
-            data.setdefault(key, [])
+            try:
+                data = enrich_scanner_with_realtime_prices(data)
+            except Exception as e:
+                logging.error(f"Price enrichment failed: {e}")
 
-        # 🔥 Enrich with real-time Finnhub prices but DO NOT FILTER anything
-        try:
-            data = enrich_scanner_with_realtime_prices(data)
+            return jsonify({"success": True, "data": data})
         except Exception as e:
-            logging.error(f"Price enrichment failed: {e}")
+            logging.error(f"Scanner (AI) error: {type(e).__name__} - {e}")
+            logging.info(f"RAW AI OUTPUT (truncated): {repr(raw[:400])}")
 
-        return jsonify({"success": True, "data": data})
-
-    except Exception as e:
-        logging.error(f"Scanner error: {type(e).__name__} - {e}")
-        logging.error(f"RAW AI OUTPUT RECEIVED: {repr(raw_json_string)}")
-
-        return jsonify({
-            "success": False,
-            "error": "Scanner failed due to server error.",
-            "data": {"SmallCap": [], "MidCap": [], "LargeCap": []}
-        }), 500
-
+    # Fallback path (no 500 to the browser)
+    data = fallback_scan()
+    return jsonify({"success": True, "data": data, "warning": "fallback_local"})
 
 @app.route("/")
 @auth.login_required
 def dashboard_view():
     return render_template("index.html")
 
-
 @app.errorhandler(401)
 def unauthorized(error):
     return 'Login Required: Please enter your credentials to access the Black Box Scanner.', 401
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
