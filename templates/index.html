@@ -1,754 +1,1115 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Black Box Scanner | Pro Trader Dashboard</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0">
+  <title>Black Box Scanner | Pro Trader Dashboard</title>
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+    rel="stylesheet">
 
-    <style>
-        :root {
-            --font-family-primary: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  <style>
+    :root {
+      --font-family-primary: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                             Helvetica, Arial, sans-serif, "Apple Color Emoji",
+                             "Segoe UI Emoji", "Segoe UI Symbol";
 
-            --bs-body-bg: #0d1117;
-            --bs-body-color: #f0f6fc;
-            --bs-card-bg: #161b22;
-            --bs-border-color: #30363d;
-            --bs-primary: #58a6ff;
-            --text-data: #6fbbd3;
-            --text-gain: #34d058;
-            --text-muted-enhanced: #8b949e;
-        }
+      --bs-body-bg: #0b1020;
+      --bs-body-color: #f4f6fb;
+      --bs-card-bg: #14192a;
+      --bs-border-color: #272c3f;
 
-        body.light-mode {
-            --bs-body-bg: #f5f5f5;
-            --bs-body-color: #333;
-            --bs-card-bg: #ffffff;
-            --bs-border-color: #ccc;
-            --text-data: #007bff;
-            --text-gain: #28a745;
-            --text-muted-enhanced: #666;
-        }
+      --primary-accent: #5ba8ff;
+      --secondary-accent: #60e5b0;
 
-        body {
-            background-color: var(--bs-body-bg);
-            color: var(--bs-body-color);
-            font-family: var(--font-family-primary);
-            transition: all 0.3s;
-            font-size: 14px;
-        }
+      --text-data: #7fc7ff;
+      --text-gain: #4fd36a;
+      --text-muted-enhanced: #8e95a5;
+    }
 
-        body.font-small { font-size: 12px; }
-        body.font-large { font-size: 16px; }
+    body.light-mode {
+      --bs-body-bg: #f5f6fb;
+      --bs-body-color: #23263a;
+      --bs-card-bg: #ffffff;
+      --bs-border-color: #ccd1e4;
 
-        .dashboard-header {
-            border-bottom: 2px solid var(--bs-border-color);
-            padding-bottom: 15px;
-            margin-bottom: 10px;
-        }
+      --primary-accent: #2f6edc;
+      --secondary-accent: #1ba87e;
 
-        .dashboard-header .lead {
-            color: var(--text-muted-enhanced) !important;
-            font-weight: 500;
-        }
+      --text-data: #0056c7;
+      --text-gain: #148b3b;
+      --text-muted-enhanced: #60657a;
+    }
 
-        .card {
-            background-color: var(--bs-card-bg);
-            border: 1px solid var(--bs-border-color);
-            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
-        }
+    body {
+      background-color: var(--bs-body-bg);
+      color: var(--bs-body-color);
+      font-family: var(--font-family-primary);
+      transition: background-color 0.25s, color 0.25s;
+      font-size: 14px;
+    }
 
-        .table-dark thead th, .table-dark {
-            border-color: var(--bs-border-color);
-        }
+    body.font-small { font-size: 12px; }
+    body.font-large { font-size: 16px; }
 
-        .table-dark tbody tr:hover {
-            background-color: #21262d;
-            cursor: pointer;
-        }
+    .dashboard-header {
+      border-bottom: 1px solid var(--bs-border-color);
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
 
-        .text-ticker { color: var(--text-data); font-weight: 600; }
-        .text-gain-percent { color: var(--text-gain); font-weight: 600; }
-        .text-muted { color: var(--text-muted-enhanced) !important; }
+    .dashboard-header .lead {
+      color: var(--text-muted-enhanced) !important;
+      font-weight: 500;
+    }
 
-        /* Scrollable news lists */
-        .news-list-scroll {
-            max-height: 350px;
-            overflow-y: auto;
-        }
+    .card {
+      background-color: var(--bs-card-bg);
+      border: 1px solid var(--bs-border-color);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    }
 
-        @media (max-width: 992px) {
-            .dashboard-header { text-align: left !important; }
-            .dashboard-header h1 { font-size: 1.8rem; }
-            .col-lg-4 { padding-bottom: 20px; }
-        }
-    </style>
+    .table-dark,
+    .table-dark thead th {
+      border-color: var(--bs-border-color);
+      background-color: #14192a;
+    }
+
+    .table-dark tbody tr:hover {
+      background-color: #1b2134;
+      cursor: pointer;
+    }
+
+    .text-ticker {
+      color: var(--text-data);
+      font-weight: 600;
+    }
+
+    .text-gain-percent {
+      color: var(--text-gain);
+      font-weight: 600;
+    }
+
+    .text-muted {
+      color: var(--text-muted-enhanced) !important;
+    }
+
+    .nav-tabs .nav-link {
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted-enhanced);
+    }
+
+    .nav-tabs .nav-link.active {
+      color: var(--primary-accent);
+      border-color: var(--primary-accent);
+      background-color: transparent;
+    }
+
+    .nav-tabs {
+      border-bottom-color: var(--bs-border-color);
+    }
+
+    .news-scroll {
+      max-height: 420px;
+      overflow-y: auto;
+    }
+
+    .news-scroll .list-group-item {
+      border-left: none;
+      border-right: none;
+      border-radius: 0;
+      background-color: transparent;
+      color: inherit;
+    }
+
+    .news-scroll .list-group-item:hover {
+      background-color: rgba(255, 255, 255, 0.03);
+    }
+
+    .news-ticker-badge {
+      font-size: 0.7rem;
+      padding: 2px 4px;
+      margin-right: 4px;
+    }
+
+    .btn-xs {
+      padding: 0.125rem 0.45rem;
+      font-size: 0.7rem;
+      border-radius: 0.25rem;
+    }
+
+    @media (max-width: 992px) {
+      .dashboard-header {
+        text-align: left !important;
+      }
+
+      .dashboard-header h1 {
+        font-size: 1.7rem;
+      }
+    }
+  </style>
 </head>
+
 <body class="dark-mode">
 
 <div class="container-fluid p-3 p-md-4">
-    <div class="dashboard-header d-flex justify-content-between align-items-center flex-wrap">
-        <div>
-            <h1 class="text-info mb-0">
-                Black Box Scanner <span class="badge bg-danger">PRO LIVE</span>
-            </h1>
-            <p class="lead small mt-1 mb-0 d-none d-md-block">
-                High-Velocity Breakout Scanner with AI-Enhanced News.
-            </p>
-        </div>
-
-        <div class="d-flex gap-3 align-items-center mt-2 mt-md-0">
-            <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="themeSwitch" checked>
-                <label class="form-check-label" for="themeSwitch">Dark Mode</label>
-            </div>
-            <select id="fontSizeSelect"
-                    class="form-select form-select-sm bg-dark text-white"
-                    style="width: 120px;">
-                <option value="font-small">Small Font</option>
-                <option value="" selected>Medium Font</option>
-                <option value="font-large">Large Font</option>
-            </select>
-            <button id="runScanBtn" class="btn btn-primary btn-sm px-4">
-                Run Scanner
-            </button>
-        </div>
+  <!-- HEADER -->
+  <div class="dashboard-header d-flex justify-content-between align-items-center flex-wrap">
+    <div>
+      <h1 class="text-info mb-0">
+        Black Box Scanner
+        <span class="badge bg-danger">PRO LIVE</span>
+      </h1>
+      <p class="lead small mt-1 mb-0">
+        High-Velocity Breakout Scanner & Catalyst Tape.
+      </p>
+      <p class="small text-muted mb-0" id="lastUpdated">Last Scan: Never</p>
     </div>
 
-    <p class="small text-muted mb-2" id="lastUpdated">Last Scan: Never</p>
+    <div class="d-flex gap-3 align-items-center mt-2 mt-md-0 flex-wrap">
+      <!-- Theme switch -->
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="themeSwitch" checked>
+        <label class="form-check-label small" for="themeSwitch">Dark Mode</label>
+      </div>
 
-    <!-- MAIN TABS -->
-    <ul class="nav nav-tabs mt-2" id="mainTabs" role="tablist">
-        <li class="nav-item" role="presentation">
-            <button class="nav-link active"
-                    id="news-tab-btn"
-                    data-bs-toggle="tab"
-                    data-bs-target="#news-tab"
-                    type="button"
-                    role="tab">
-                News Feed
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link"
-                    id="scanner-tab-btn"
-                    data-bs-toggle="tab"
-                    data-bs-target="#scanner-tab"
-                    type="button"
-                    role="tab">
-                Black Box Scanner
-            </button>
-        </li>
-    </ul>
+      <!-- Font size -->
+      <select id="fontSizeSelect"
+              class="form-select form-select-sm bg-dark text-white"
+              style="width: 120px;">
+        <option value="font-small">Small Font</option>
+        <option value="" selected>Medium Font</option>
+        <option value="font-large">Large Font</option>
+      </select>
 
-    <div class="tab-content mt-3">
-        <!-- NEWS TAB -->
-        <div class="tab-pane fade show active"
-             id="news-tab"
-             role="tabpanel"
-             aria-labelledby="news-tab-btn">
+      <!-- Run scanner -->
+      <button id="runScanBtn" class="btn btn-primary btn-sm px-4">
+        ⚡ Run Scanner
+      </button>
+    </div>
+  </div>
 
-            <!-- Global refresh for ALL news -->
-            <div class="d-flex justify-content-end mb-2">
-                <button id="newsRefreshBtn" class="btn btn-sm btn-outline-light">
-                    Refresh All News
+  <!-- TABS -->
+  <ul class="nav nav-tabs mb-3" id="mainTab" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active"
+              id="scanner-tab-button"
+              data-bs-toggle="tab"
+              data-bs-target="#scanner-tab"
+              type="button"
+              role="tab"
+              aria-controls="scanner-tab"
+              aria-selected="true">
+        📈 Scanner
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link"
+              id="news-tab-button"
+              data-bs-toggle="tab"
+              data-bs-target="#news-tab"
+              type="button"
+              role="tab"
+              aria-controls="news-tab"
+              aria-selected="false">
+        📰 News & AI Tape
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content" id="mainTabContent">
+
+    <!-- ===== SCANNER TAB (LANDING) ===== -->
+    <div class="tab-pane fade show active"
+         id="scanner-tab"
+         role="tabpanel"
+         aria-labelledby="scanner-tab-button">
+
+      <div id="scanner-alerts" class="row g-3">
+        <!-- SmallCap -->
+        <div class="col-lg-4 col-sm-12">
+          <div class="card h-100">
+            <div class="card-header bg-danger text-white py-2">
+              <h5 class="mb-0">🔥 Small Cap / High Beta</h5>
+            </div>
+            <div class="card-body p-0">
+              <table class="table table-dark table-striped table-hover mb-0">
+                <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Entry</th>
+                  <th>Target (%)</th>
+                </tr>
+                </thead>
+                <tbody id="SmallCap-table">
+                <tr>
+                  <td colspan="3" class="text-center text-muted">
+                    Awaiting Scan Data...
+                  </td>
+                </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- MidCap -->
+        <div class="col-lg-4 col-sm-12">
+          <div class="card h-100">
+            <div class="card-header bg-warning text-dark py-2">
+              <h5 class="mb-0">🟡 Mid Cap / Liquidity Mix</h5>
+            </div>
+            <div class="card-body p-0">
+              <table class="table table-dark table-striped table-hover mb-0">
+                <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Entry</th>
+                  <th>Target (%)</th>
+                </tr>
+                </thead>
+                <tbody id="MidCap-table">
+                <tr>
+                  <td colspan="3" class="text-center text-muted">
+                    Awaiting Scan Data...
+                  </td>
+                </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- LargeCap -->
+        <div class="col-lg-4 col-sm-12">
+          <div class="card h-100">
+            <div class="card-header bg-success text-white py-2">
+              <h5 class="mb-0">🟢 Large Cap / Institutional</h5>
+            </div>
+            <div class="card-body p-0">
+              <table class="table table-dark table-striped table-hover mb-0">
+                <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Entry</th>
+                  <th>Target (%)</th>
+                </tr>
+                </thead>
+                <tbody id="LargeCap-table">
+                <tr>
+                  <td colspan="3" class="text-center text-muted">
+                    Awaiting Scan Data...
+                  </td>
+                </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detailed Analysis Card -->
+      <div class="row mt-3">
+        <div class="col-12">
+          <div class="card">
+            <div id="detailedAnalysisCard" class="p-4">
+              <p class="text-center text-muted mb-0">
+                Click on any alert in the tables above to view the detailed analysis card and trading plan.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===== NEWS TAB ===== -->
+    <div class="tab-pane fade"
+         id="news-tab"
+         role="tabpanel"
+         aria-labelledby="news-tab-button">
+
+      <div class="container-fluid mt-3">
+
+        <!-- Controls row: Watchlist + Topic Filter + Refresh -->
+        <div class="card mb-3">
+          <div class="card-body py-3">
+            <div class="d-flex flex-wrap gap-3 align-items-center">
+              <!-- Watchlist form -->
+              <form id="watchlistForm" class="d-flex flex-wrap gap-2 align-items-center">
+                <div class="input-group input-group-sm" style="max-width: 260px;">
+                  <input id="watchlistInput"
+                         type="text"
+                         class="form-control"
+                         placeholder="Add ticker (e.g. NVDA)">
+                  <button class="btn btn-outline-primary" type="submit">Add</button>
+                </div>
+                <small class="text-muted">Watchlist: click ❌ to remove a ticker.</small>
+              </form>
+
+              <!-- Watchlist badges -->
+              <div id="watchlistBadges" class="d-flex flex-wrap gap-1"></div>
+
+              <!-- Topic dropdown & refresh -->
+              <div class="ms-auto d-flex flex-wrap gap-2 align-items-center">
+                <label for="topicFilterSelect"
+                       class="form-label mb-0 small text-muted">Topic filter</label>
+                <select id="topicFilterSelect"
+                        class="form-select form-select-sm"
+                        style="max-width: 260px;">
+                  <option value="all">All topics</option>
+                  <option value="ai">AI & Automation</option>
+                  <option value="quantum">Quantum Computing (Emerging Tech)</option>
+                  <option value="bio">Biotech & HealthTech</option>
+                  <option value="renewable">Renewables & Cleantech</option>
+                  <option value="cyber">Cybersecurity & Cloud</option>
+                  <option value="synthetic_bio">Synthetic Biology</option>
+                  <option value="neuro">BCI & Neurotechnology</option>
+                  <option value="nuclear">Advanced Nuclear (Fission/Fusion)</option>
+                </select>
+
+                <button id="refreshNewsBtn"
+                        class="btn btn-sm btn-outline-info">
+                  🔄 Refresh Headlines
                 </button>
+              </div>
             </div>
+          </div>
+        </div>
 
-            <!-- Top row: 3 cards (1: stock-specific, 2: Benzinga, 3: Finnhub) -->
-            <div class="row">
-                <!-- Stock-specific card (1st) -->
-                <div class="col-lg-4 col-md-12 col-sm-12 mb-3">
-                    <div class="card">
-                        <div class="card-header bg-success text-white">
-                            <h5 class="mb-0">Stock-Specific Headlines</h5>
-                        </div>
-                        <div class="card-body p-0">
-                            <p class="small text-muted px-3 pt-2 mb-1" id="newsStatusStock">
-                                Headlines that mention specific tickers (e.g. HIMS, NVDA, JNJ).
-                            </p>
-                            <div class="news-list-scroll">
-                                <ul class="list-group list-group-flush" id="newsListStock"></ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Benzinga card (2nd) -->
-                <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
-                    <div class="card">
-                        <div class="card-header bg-warning text-dark">
-                            <h5 class="mb-0">Benzinga – News Feed</h5>
-                        </div>
-                        <div class="card-body p-0">
-                            <p class="small text-muted px-3 pt-2 mb-1" id="newsStatusBenzinga">
-                                Waiting for headlines...
-                            </p>
-                            <div class="news-list-scroll">
-                                <ul class="list-group list-group-flush" id="newsListBenzinga"></ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Finnhub card (3rd) -->
-                <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
-                    <div class="card">
-                        <div class="card-header bg-info text-dark">
-                            <h5 class="mb-0">Finnhub – General News</h5>
-                        </div>
-                        <div class="card-body p-0">
-                            <p class="small text-muted px-3 pt-2 mb-1" id="newsStatusFinnhub">
-                                Loading news...
-                            </p>
-                            <div class="news-list-scroll">
-                                <ul class="list-group list-group-flush" id="newsListFinnhub"></ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+        <!-- News cards row -->
+        <div class="row gy-3">
+          <!-- Watchlist headlines -->
+          <div class="col-xl-3 col-lg-6">
+            <div class="card h-100">
+              <div class="card-header bg-primary text-white py-2">
+                <h6 class="mb-0">🎯 Watchlist Headlines</h6>
+              </div>
+              <div class="card-body p-0">
+                <div id="watchlistNewsList"
+                     class="list-group list-group-flush small news-scroll"></div>
+              </div>
             </div>
+          </div>
 
-            <!-- AI View -->
-            <div class="row mt-2">
-                <div class="col-12">
-                    <div class="card">
-                        <div class="card-header bg-dark text-white">
-                            <h5 class="mb-0">AI View / Analyst Lens</h5>
-                        </div>
-                        <div class="card-body" id="newsAnalysisPanel">
-                            <p class="text-muted mb-0">
-                                Select any headline in the lists above and click
-                                <strong>AI Detail</strong> to see a short summary,
-                                stance (bullish / bearish / mixed / neutral) and risks.
-                                This is not investment advice.
-                            </p>
-                        </div>
-                    </div>
-                </div>
+          <!-- Stock-specific catalysts -->
+          <div class="col-xl-3 col-lg-6">
+            <div class="card h-100">
+              <div class="card-header bg-success text-white py-2">
+                <h6 class="mb-0">💥 Stock-Specific Catalysts</h6>
+              </div>
+              <div class="card-body p-0">
+                <div id="stockSpecificNewsList"
+                     class="list-group list-group-flush small news-scroll"></div>
+              </div>
             </div>
+          </div>
 
-        </div> <!-- /news-tab -->
-
-        <!-- SCANNER TAB -->
-        <div class="tab-pane fade"
-             id="scanner-tab"
-             role="tabpanel"
-             aria-labelledby="scanner-tab-btn">
-
-            <div id="scanner-alerts" class="row">
-                <div class="col-lg-4 col-sm-12">
-                    <div class="card">
-                        <div class="card-header bg-danger text-white">
-                            <h5>🔥 Small Cap / High Beta</h5>
-                        </div>
-                        <div class="card-body p-0">
-                            <table class="table table-dark table-striped table-hover mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>Ticker</th>
-                                        <th>Entry</th>
-                                        <th>Target (%)</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="SmallCap-table">
-                                    <tr>
-                                        <td colspan="3" class="text-center text-muted">
-                                            Awaiting Scan Data...
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-lg-4 col-sm-12">
-                    <div class="card">
-                        <div class="card-header bg-warning text-dark">
-                            <h5>🟡 Mid Cap / Liquidity Mix</h5>
-                        </div>
-                        <div class="card-body p-0">
-                            <table class="table table-dark table-striped table-hover mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>Ticker</th>
-                                        <th>Entry</th>
-                                        <th>Target (%)</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="MidCap-table">
-                                    <tr>
-                                        <td colspan="3" class="text-center text-muted">
-                                            Awaiting Scan Data...
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-lg-4 col-sm-12">
-                    <div class="card">
-                        <div class="card-header bg-success text-white">
-                            <h5>🟢 Large Cap / Institutional</h5>
-                        </div>
-                        <div class="card-body p-0">
-                            <table class="table table-dark table-striped table-hover mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>Ticker</th>
-                                        <th>Entry</th>
-                                        <th>Target (%)</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="LargeCap-table">
-                                    <tr>
-                                        <td colspan="3" class="text-center text-muted">
-                                            Awaiting Scan Data...
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+          <!-- Benzinga -->
+          <div class="col-xl-3 col-lg-6">
+            <div class="card h-100">
+              <div class="card-header bg-warning text-dark py-2">
+                <h6 class="mb-0">📰 Benzinga Pro Feed</h6>
+              </div>
+              <div class="card-body p-0">
+                <div id="benzingaNewsList"
+                     class="list-group list-group-flush small news-scroll"></div>
+              </div>
             </div>
+          </div>
 
-            <!-- Detailed analysis card -->
-            <div class="row mt-3">
-                <div class="col-12">
-                    <div class="card">
-                        <div id="detailedAnalysisCard" class="p-4">
-                            <p class="text-center text-muted mb-0">
-                                Click on any alert in the tables above to view the detailed analysis card and trading plan.
-                            </p>
-                        </div>
-                    </div>
-                </div>
+          <!-- Finnhub -->
+          <div class="col-xl-3 col-lg-6">
+            <div class="card h-100">
+              <div class="card-header bg-secondary text-white py-2">
+                <h6 class="mb-0">🌐 Finnhub General & Macro</h6>
+              </div>
+              <div class="card-body p-0">
+                <div id="finnhubNewsList"
+                     class="list-group list-group-flush small news-scroll"></div>
+              </div>
             </div>
+          </div>
+        </div>
 
-        </div> <!-- /scanner-tab -->
-    </div> <!-- /tab-content -->
-</div> <!-- /container -->
+        <!-- AI News Analysis panel -->
+        <div class="row mt-3">
+          <div class="col-12">
+            <div class="card">
+              <div id="newsAnalysisCard" class="p-3 small text-muted">
+                Select a headline and click <strong>AI View</strong> to see analysis here.
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div> <!-- container-fluid -->
+    </div> <!-- news-tab -->
+
+  </div> <!-- tab-content -->
+
+</div> <!-- container-fluid -->
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
 <script>
-    const MARKET_CAPS = ['SmallCap', 'MidCap', 'LargeCap'];
-    const runScanBtn = document.getElementById('runScanBtn');
-    const lastUpdated = document.getElementById('lastUpdated');
-    const fontSizeSelect = document.getElementById('fontSizeSelect');
-    const themeSwitch = document.getElementById('themeSwitch');
+  // =================== THEME & FONT ===================
+  const themeSwitch = document.getElementById('themeSwitch');
+  const fontSizeSelect = document.getElementById('fontSizeSelect');
 
-    let allAlertData = {};
-    let currentActiveRow = null;
+  function applyTheme(isDark) {
+    document.body.classList.toggle('light-mode', !isDark);
+    document.body.classList.toggle('dark-mode', isDark);
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
 
-    // NEWS STATE
-    let latestNews = [];
-    let newsById = {};
-
-    const newsListFinnhub = document.getElementById('newsListFinnhub');
-    const newsListBenzinga = document.getElementById('newsListBenzinga');
-    const newsListStock = document.getElementById('newsListStock');
-
-    const newsStatusFinnhub = document.getElementById('newsStatusFinnhub');
-    const newsStatusBenzinga = document.getElementById('newsStatusBenzinga');
-    const newsStatusStock = document.getElementById('newsStatusStock');
-    const newsAnalysisPanel = document.getElementById('newsAnalysisPanel');
-    const newsRefreshBtn = document.getElementById('newsRefreshBtn');
-
-    // THEME + FONT
-    function applyTheme(isDark) {
-        document.body.classList.toggle('light-mode', !isDark);
-        document.body.classList.toggle('dark-mode', isDark);
-        localStorage.setItem('theme', isDark ? 'dark' : 'light');
-
-        const element = fontSizeSelect;
-        const darkClasses = 'bg-dark text-white';
-        const lightClasses = 'bg-light text-dark';
-        const allThemeClasses = (darkClasses + ' ' + lightClasses).split(' ');
-        element.classList.remove(...allThemeClasses);
-        if (isDark) {
-            element.classList.add(...darkClasses.split(' '));
-        } else {
-            element.classList.add(...lightClasses.split(' '));
-        }
-    }
-
-    function applyFontSize(sizeClass) {
-        document.body.className = document.body.className.replace(/\bfont-(small|large)\b/g, '');
-        if (sizeClass) {
-            document.body.classList.add(sizeClass);
-        }
-        localStorage.setItem('fontSize', sizeClass);
-    }
-
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    const savedFontSize = localStorage.getItem('fontSize') || '';
-
-    if (savedTheme === 'light') {
-        themeSwitch.checked = false;
-        applyTheme(false);
+    const element = fontSizeSelect;
+    const darkClasses = 'bg-dark text-white';
+    const lightClasses = 'bg-light text-dark';
+    const allThemeClasses = (darkClasses + ' ' + lightClasses).split(' ');
+    element.classList.remove(...allThemeClasses);
+    if (isDark) {
+      element.classList.add(...darkClasses.split(' '));
     } else {
-        themeSwitch.checked = true;
-        applyTheme(true);
+      element.classList.add(...lightClasses.split(' '));
     }
+  }
 
-    applyFontSize(savedFontSize);
-    fontSizeSelect.value = savedFontSize;
-
-    themeSwitch.addEventListener('change', () => applyTheme(themeSwitch.checked));
-    fontSizeSelect.addEventListener('change', (e) => applyFontSize(e.target.value));
-
-    // --- HELPER: classify source robustly ---
-    function classifySource(item) {
-        const src = (item.source || '').toLowerCase();
-        const provider = (item.provider || '').toLowerCase();
-        const url = (item.url || '').toLowerCase();
-
-        if (src.includes('benzinga') || provider.includes('benzinga') || url.includes('benzinga.com')) {
-            return 'benzinga';
-        }
-        if (src.includes('finnhub')) {
-            return 'finnhub';
-        }
-        // fall back: if provider looks like CNBC, MarketWatch etc, we'll treat as Finnhub general
-        if (provider) return 'finnhub';
-        return 'unknown';
+  function applyFontSize(sizeClass) {
+    document.body.className = document.body.className.replace(/\bfont-(small|large)\b/g, '');
+    if (sizeClass) {
+      document.body.classList.add(sizeClass);
     }
+    localStorage.setItem('fontSize', sizeClass);
+  }
 
-    // NEWS FUNCTIONS
-    async function fetchNewsHeadlines() {
-        if (newsStatusStock) newsStatusStock.textContent = 'Loading latest headlines...';
-        if (newsStatusBenzinga) newsStatusBenzinga.textContent = 'Waiting for headlines...';
-        if (newsStatusFinnhub) newsStatusFinnhub.textContent = 'Loading news...';
+  const savedTheme = localStorage.getItem('theme') || 'dark';
+  const savedFontSize = localStorage.getItem('fontSize') || '';
 
-        try {
-            const res = await fetch('/api/news/headlines?limit=50');
-            const json = await res.json();
-            console.log('NEWS JSON:', json);  // debug in browser console
+  if (savedTheme === 'light') {
+    themeSwitch.checked = false;
+    applyTheme(false);
+  } else {
+    themeSwitch.checked = true;
+    applyTheme(true);
+  }
+  applyFontSize(savedFontSize);
+  fontSizeSelect.value = savedFontSize;
 
-            if (!json.success) {
-                throw new Error(json.error || 'News API error');
-            }
+  themeSwitch.addEventListener('change', () => applyTheme(themeSwitch.checked));
+  fontSizeSelect.addEventListener('change', (e) => applyFontSize(e.target.value));
 
-            latestNews = json.data || [];
-            newsById = {};
-            latestNews.forEach(item => {
-                if (item.id) {
-                    newsById[item.id] = item;
-                }
-            });
 
-            renderAllNewsCards();
-        } catch (err) {
-            console.error('News fetch error', err);
-            if (newsStatusStock) {
-                newsStatusStock.textContent = 'Failed to load news. Try again later.';
-            }
-        }
+  // =================== SCANNER LOGIC ===================
+  const MARKET_CAPS = ['SmallCap', 'MidCap', 'LargeCap'];
+  const runScanBtn = document.getElementById('runScanBtn');
+  const lastUpdated = document.getElementById('lastUpdated');
+
+  let allAlertData = {};
+  let currentActiveRow = null;
+
+  async function fetchScanner(profile) {
+    try {
+      runScanBtn.textContent = 'Scanning...';
+      runScanBtn.disabled = true;
+
+      const resp = await fetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile })
+      });
+
+      const result = await resp.json();
+
+      if (!result.success) {
+        console.error('Scanner error:', result.error);
+        alert(`Scanner Failed: ${result.error}`);
+        return;
+      }
+
+      allAlertData = result;
+      displayAlerts(result);
+      lastUpdated.textContent = `Last Scan: ${new Date().toLocaleTimeString()}`;
+    } catch (err) {
+      console.error('Scanner fetch error:', err);
+      alert('A network or server error occurred. Check connection.');
+    } finally {
+      runScanBtn.textContent = '⚡ Run Scanner';
+      runScanBtn.disabled = false;
     }
+  }
 
-    function renderAllNewsCards() {
-        const finnhubItems  = latestNews.filter(n => classifySource(n) === 'finnhub');
-        const benzingaItems = latestNews.filter(n => classifySource(n) === 'benzinga');
-        const stockItems    = latestNews.filter(
-            n => Array.isArray(n.tickers) && n.tickers.length > 0
-        );
+  function displayAlerts(fullResult) {
+    const data = fullResult.data;
+    MARKET_CAPS.forEach(cap => {
+      const tableBody = document.getElementById(`${cap}-table`);
+      tableBody.innerHTML = '';
+      const alerts = data[cap] || [];
 
-        renderNewsListToElement(stockItems, newsListStock, newsStatusStock, 'No stock-specific headlines detected yet.');
-        renderNewsListToElement(benzingaItems, newsListBenzinga, newsStatusBenzinga, 'No Benzinga headlines.');
-        renderNewsListToElement(finnhubItems, newsListFinnhub, newsStatusFinnhub, 'No Finnhub headlines.');
-    }
+      if (!alerts.length) {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="3" class="text-center text-muted">
+              No setups detected for this profile.
+            </td>
+          </tr>`;
+        return;
+      }
 
-    function renderNewsListToElement(items, ulEl, statusEl, emptyText) {
-        if (!ulEl) return;
-        ulEl.innerHTML = '';
-        if (!items.length) {
-            if (statusEl) statusEl.textContent = emptyText;
-            return;
-        }
-        if (statusEl) statusEl.textContent = '';
+      alerts.forEach((alert) => {
+        const row = document.createElement('tr');
+        row.className = 'alert-row';
+        row.setAttribute('data-cap', cap);
+        row.setAttribute('data-ticker', alert.Ticker);
 
-        items.forEach(item => {
-            const li = document.createElement('li');
-            li.className = 'list-group-item d-flex flex-column flex-md-row justify-content-between align-items-start gap-2';
+        row.onclick = function () {
+          if (currentActiveRow) {
+            currentActiveRow.classList.remove('table-active');
+          }
+          this.classList.add('table-active');
+          currentActiveRow = this;
+          showAnalysisCard(cap, alert.Ticker);
+        };
 
-            const dt = new Date((item.published_ts || 0) * 1000);
-            const timeStr = isNaN(dt.getTime()) ? '' : dt.toLocaleString();
+        const entry = parseFloat(alert.EntryPrice);
+        const target = parseFloat(alert.TargetPrice);
+        const gainPct = parseFloat(alert.PotentialGainPercent);
 
-            const tickerText = (item.tickers && item.tickers.length)
-                ? item.tickers.slice(0, 4).join(', ')
-                : '';
-
-            const classified = classifySource(item);
-            const isBenzinga = classified === 'benzinga';
-
-            li.innerHTML = `
-                <div class="flex-grow-1">
-                    <div class="d-flex align-items-center mb-1">
-                        <span class="badge ${isBenzinga ? 'bg-warning text-dark' : 'bg-secondary'} me-2">
-                            ${item.source || item.provider || 'News'}
-                        </span>
-                        ${tickerText ? `<span class="badge border border-light text-muted">${tickerText}</span>` : ''}
-                    </div>
-                    <a href="${item.url || '#'}" target="_blank" class="fw-semibold text-decoration-none">
-                        ${item.headline}
-                    </a>
-                    <div class="small text-muted mt-1">${timeStr}</div>
-                </div>
-                <div class="d-flex flex-column align-items-end">
-                    <button class="btn btn-sm btn-outline-info mb-1" data-id="${item.id}">
-                        AI Detail
-                    </button>
-                </div>
-            `;
-
-            const btn = li.querySelector('button');
-            btn.addEventListener('click', () => {
-                handleNewsDetailClick(item.id);
-            });
-
-            ulEl.appendChild(li);
-        });
-    }
-
-    async function handleNewsDetailClick(articleId) {
-        const article = newsById[articleId];
-        if (!article || !newsAnalysisPanel) return;
-
-        newsAnalysisPanel.innerHTML = `
-            <p class="text-muted mb-2">Thinking like a pro analyst…</p>
-            <div class="spinner-border spinner-border-sm" role="status"></div>
+        row.innerHTML = `
+          <td>
+            <strong class="text-ticker">${alert.Ticker}</strong>
+            <span class="badge ${
+              (alert.PrimaryCatalyst || '').toLowerCase().includes('sec') ||
+              (alert.PrimaryCatalyst || '').toLowerCase().includes('fda') ||
+              (alert.PrimaryCatalyst || '').toLowerCase().includes('earnings') ||
+              (alert.PrimaryCatalyst || '').toLowerCase().includes('news')
+                ? 'bg-danger'
+                : 'bg-info'
+            }">
+              ${alert.PrimaryCatalyst ? 'CATALYST' : 'TECH'}
+            </span>
+          </td>
+          <td>
+            $${isNaN(entry) ? '—' : entry.toFixed(2)}
+          </td>
+          <td>
+            <strong class="text-gain-percent">
+              ${isNaN(gainPct) ? '—' : `+${gainPct.toFixed(2)}%`}
+            </strong>
+            <span class="text-muted small">
+              @${isNaN(target) ? '—' : `$${target.toFixed(2)}`}
+            </span>
+          </td>
         `;
+        tableBody.appendChild(row);
+      });
+    });
 
-        try {
-            const res = await fetch('/api/news/analysis', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    symbol: (article.tickers && article.tickers[0]) || null,
-                    article: article
-                })
-            });
-            const json = await res.json();
-            if (!json.success) {
-                throw new Error(json.error || 'AI analysis failed');
-            }
-            const data = json.data;
-            renderNewsAnalysis(article, data);
-        } catch (err) {
-            console.error('AI analysis error', err);
-            newsAnalysisPanel.innerHTML = `
-                <p class="text-danger mb-0">AI analysis failed. Please try again later.</p>
-            `;
-        }
+    // auto-select first alert if any
+    const firstCap = MARKET_CAPS.find(cap => data[cap] && data[cap].length > 0);
+    if (firstCap && data[firstCap].length > 0) {
+      const firstRow = document.querySelector(`#${firstCap}-table tr`);
+      if (firstRow) firstRow.click();
+    }
+  }
+
+  function showAnalysisCard(cap, ticker) {
+    const analysisDiv = document.getElementById('detailedAnalysisCard');
+    const alertData = allAlertData.data[cap];
+    if (!alertData) {
+      analysisDiv.innerHTML = '<p class="text-center p-4 text-muted mb-0">No analysis available.</p>';
+      return;
+    }
+    const alert = alertData.find(a => a.Ticker === ticker);
+    if (!alert) {
+      analysisDiv.innerHTML = '<p class="text-center p-4 text-muted mb-0">Analysis data not found.</p>';
+      return;
     }
 
-    function renderNewsAnalysis(article, analysis) {
-        if (!newsAnalysisPanel) return;
-        const stance = (analysis.stance || 'neutral').toLowerCase();
-        let badgeClass = 'bg-secondary';
-        if (stance === 'bullish') badgeClass = 'bg-success';
-        else if (stance === 'bearish') badgeClass = 'bg-danger';
-        else if (stance === 'mixed') badgeClass = 'bg-warning text-dark';
+    const detailed = (alert.DetailedAnalysis || '').toString();
+    const points = detailed
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => line.replace(/^[\-\*\d\.\s]+/, '').trim());
 
-        const rationaleList = (analysis.rationale || [])
-            .map(p => `<li>${p}</li>`)
-            .join('');
+    const bulletHTML = points.map(p => `<li>${p}</li>`).join('');
 
-        newsAnalysisPanel.innerHTML = `
-            <h6 class="text-info mb-1">${article.headline}</h6>
-            <p class="small text-muted mb-2">
-                Source: ${article.source || article.provider || 'News'}
-                ${article.tickers && article.tickers.length ? ` | Tickers: ${article.tickers.join(', ')}` : ''}
+    const entry = parseFloat(alert.EntryPrice);
+    const target = parseFloat(alert.TargetPrice);
+    const stop = parseFloat(alert.StopPrice);
+    const gainPct = parseFloat(alert.PotentialGainPercent);
+
+    analysisDiv.innerHTML = `
+      <div class="card-header bg-dark text-white p-3">
+        <h4 class="mb-0 text-info">${alert.Ticker} - Trading Thesis & Action Plan</h4>
+      </div>
+      <div class="card-body p-4">
+        <div class="row">
+          <div class="col-md-6 border-end border-secondary">
+            <h5>Trade Setup & Thesis <span class="badge bg-warning text-dark">WHY NOW?</span></h5>
+            <ul class="list-unstyled">
+              ${bulletHTML || '<li>No detailed thesis text provided.</li>'}
+            </ul>
+            <p class="mt-3">
+              <strong>Primary Catalyst:</strong>
+              <span class="text-light">${alert.PrimaryCatalyst || 'None / purely technical'}</span>
             </p>
-            <span class="badge ${badgeClass} mb-2 text-uppercase">${stance}</span>
-            <p class="mb-2">${analysis.summary || ''}</p>
-            <h6 class="mt-3">Why this matters</h6>
-            <ul class="mb-2">${rationaleList}</ul>
-            <p class="small text-muted mb-0">${analysis.risk_notes || ''}</p>
-            <p class="small text-muted mt-1">${analysis.disclaimer || ''}</p>
+          </div>
+          <div class="col-md-6">
+            <h5>Actionable Strategy <span class="badge bg-primary">THE PLAN</span></h5>
+            <p class="mb-1">
+              <strong>Entry Trigger:</strong>
+              <span class="text-success fs-5">
+                ${isNaN(entry) ? '—' : `$${entry.toFixed(2)}`}
+              </span>
+            </p>
+            <p class="mb-1">
+              <strong>Target Profit (Exit):</strong>
+              <span class="text-info fs-5">
+                ${isNaN(target) ? '—' : `$${target.toFixed(2)}`}
+              </span>
+            </p>
+            <p class="mb-1">
+              <strong>Potential Gain:</strong>
+              <span class="text-gain-percent fs-4">
+                ${isNaN(gainPct) ? '—' : `${gainPct.toFixed(2)}%`}
+              </span>
+            </p>
+            <p class="mb-1">
+              <strong>Maximum Stop Loss:</strong>
+              <span class="text-danger fs-5">
+                ${isNaN(stop) ? '—' : `$${stop.toFixed(2)}`}
+              </span>
+            </p>
+            <small class="text-muted">
+              Tier: ${cap}. AI-generated levels; always confirm with your own charts.
+            </small>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (runScanBtn) {
+    runScanBtn.addEventListener('click', () => fetchScanner('hedge_fund'));
+  }
+
+  // =================== NEWS / WATCHLIST / TOPIC FILTER ===================
+  let latestNewsData = [];
+  let watchlist = [];
+  let currentTopicFilter = 'all';
+
+  const WATCHLIST_STORAGE_KEY = 'bb_watchlist';
+  const TOPIC_FILTER_STORAGE_KEY = 'bb_topic_filter';
+
+  const watchlistForm = document.getElementById('watchlistForm');
+  const watchlistInput = document.getElementById('watchlistInput');
+  const watchlistBadges = document.getElementById('watchlistBadges');
+
+  const topicFilterSelect = document.getElementById('topicFilterSelect');
+  const refreshNewsBtn = document.getElementById('refreshNewsBtn');
+
+  const watchlistNewsList = document.getElementById('watchlistNewsList');
+  const stockSpecificNewsList = document.getElementById('stockSpecificNewsList');
+  const benzingaNewsList = document.getElementById('benzingaNewsList');
+  const finnhubNewsList = document.getElementById('finnhubNewsList');
+  const newsAnalysisCard = document.getElementById('newsAnalysisCard');
+
+  const TOPIC_FILTERS = {
+    all: { label: 'All topics', keywords: [] },
+
+    ai: {
+      label: 'AI & Automation',
+      keywords: [
+        'artificial intelligence', 'machine learning', 'deep learning',
+        'neural network', 'ai chip', 'ai chips', 'generative ai',
+        'large language model', 'llm', 'robotics', 'robot', 'automation',
+        'autonomous vehicle', 'self-driving', 'computer vision',
+        'data center', 'palantir', 'pltr', 'nvidia', 'nvda'
+      ]
+    },
+
+    quantum: {
+      label: 'Quantum Computing',
+      keywords: [
+        'quantum computing', 'quantum computer', 'qubit', 'qubits',
+        'ionq', 'rigetti', 'rig', 'd-wave', 'quantum advantage'
+      ]
+    },
+
+    bio: {
+      label: 'Biotech & HealthTech',
+      keywords: [
+        'biotech', 'biotechnology', 'clinical trial', 'phase 1', 'phase 2', 'phase 3',
+        'fda approval', 'fda clears', 'fda grants', 'drug candidate', 'oncology',
+        'gene therapy', 'crispr', 'mrna', 'vaccine', 'medical device',
+        'healthtech', 'digital health'
+      ]
+    },
+
+    renewable: {
+      label: 'Renewables & Cleantech',
+      keywords: [
+        'renewable energy', 'clean energy', 'cleantech', 'solar', 'wind',
+        'photovoltaic', 'battery storage', 'energy storage',
+        'ev charging', 'electric vehicle', 'hydrogen', 'green hydrogen',
+        'energy transition'
+      ]
+    },
+
+    cyber: {
+      label: 'Cybersecurity & Cloud',
+      keywords: [
+        'cybersecurity', 'ransomware', 'data breach', 'network security',
+        'endpoint security', 'zero trust', 'cloud security', 'cloud computing',
+        'crowdstrike', 'zscaler', 'okta', 'palo alto networks'
+      ]
+    },
+
+    synthetic_bio: {
+      label: 'Synthetic Biology',
+      keywords: [
+        'synthetic biology', 'synbio', 'engineered organism', 'metabolic engineering',
+        'ginkgo bioworks', 'cell programming', 'dna synthesis'
+      ]
+    },
+
+    neuro: {
+      label: 'BCI & Neurotechnology',
+      keywords: [
+        'brain-computer interface', 'bci', 'neural implant', 'brain implant',
+        'neurotechnology', 'neuralink', 'deep brain stimulation', 'neural interface'
+      ]
+    },
+
+    nuclear: {
+      label: 'Advanced Nuclear',
+      keywords: [
+        'small modular reactor', 'smr', 'nuclear reactor', 'advanced reactor',
+        'fusion reactor', 'nuclear fusion', 'nuclear fission',
+        'uranium', 'nuclear plant'
+      ]
+    }
+  };
+
+  function loadWatchlistFromStorage() {
+    try {
+      const raw = localStorage.getItem(WATCHLIST_STORAGE_KEY);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          watchlist = arr.map(t => String(t).toUpperCase());
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load watchlist from storage', e);
+    }
+  }
+
+  function saveWatchlistToStorage() {
+    try {
+      localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(watchlist));
+    } catch (e) {
+      console.error('Failed to save watchlist to storage', e);
+    }
+  }
+
+  function loadTopicFilterFromStorage() {
+    try {
+      const val = localStorage.getItem(TOPIC_FILTER_STORAGE_KEY);
+      if (val && TOPIC_FILTERS[val]) {
+        currentTopicFilter = val;
+        if (topicFilterSelect) topicFilterSelect.value = val;
+      }
+    } catch (e) {
+      console.error('Failed to load topic filter', e);
+    }
+  }
+
+  function saveTopicFilterToStorage() {
+    try {
+      localStorage.setItem(TOPIC_FILTER_STORAGE_KEY, currentTopicFilter);
+    } catch (e) {
+      console.error('Failed to save topic filter', e);
+    }
+  }
+
+  function renderWatchlistBadges() {
+    if (!watchlistBadges) return;
+    watchlistBadges.innerHTML = '';
+
+    if (!watchlist.length) {
+      const span = document.createElement('span');
+      span.className = 'text-muted small';
+      span.textContent = 'No tickers yet. Add one above to start.';
+      watchlistBadges.appendChild(span);
+      return;
+    }
+
+    watchlist.forEach(ticker => {
+      const badge = document.createElement('span');
+      badge.className = 'badge rounded-pill bg-dark text-light d-flex align-items-center gap-1';
+      badge.style.cursor = 'default';
+      badge.innerHTML = `
+        <span>${ticker}</span>
+        <button type="button"
+                class="btn-close btn-close-white btn-close-sm"
+                aria-label="Remove"
+                style="font-size: 0.55rem;"></button>
+      `;
+      badge.querySelector('button').addEventListener('click', () => {
+        watchlist = watchlist.filter(t => t !== ticker);
+        saveWatchlistToStorage();
+        renderWatchlistBadges();
+        renderAllNewsCards();
+      });
+      watchlistBadges.appendChild(badge);
+    });
+  }
+
+  function matchesTopic(article, topicKey) {
+    if (topicKey === 'all') return true;
+    const config = TOPIC_FILTERS[topicKey];
+    if (!config) return true;
+    const text = ((article.headline || '') + ' ' + (article.summary || '')).toLowerCase();
+    return config.keywords.some(kw => text.includes(kw.toLowerCase()));
+  }
+
+  function articleMatchesWatchlist(article) {
+    if (!watchlist.length) return false;
+    const articleTickers = (article.tickers || []).map(t => String(t).toUpperCase());
+    return articleTickers.some(t => watchlist.includes(t));
+  }
+
+  function buildNewsItem(article) {
+    const li = document.createElement('button');
+    li.type = 'button';
+    li.className = 'list-group-item list-group-item-action';
+
+    const dt = article.published_ts ? new Date(article.published_ts * 1000) : null;
+    const timeStr = dt ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+    const tickers = article.tickers || [];
+
+    li.innerHTML = `
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="me-2 text-start">
+          <div class="fw-semibold">${article.headline || 'No headline'}</div>
+          <div class="small text-muted mt-1">${article.summary || ''}</div>
+          <div class="small mt-1">
+            ${tickers.map(t => `<span class="badge bg-outline-secondary news-ticker-badge">${t}</span>`).join('')}
+            ${article.provider ? `<span class="badge bg-secondary ms-1">${article.provider}</span>` : ''}
+            ${timeStr ? `<span class="text-muted ms-2">${timeStr}</span>` : ''}
+          </div>
+        </div>
+        <div class="d-flex flex-column align-items-end gap-1">
+          ${article.url ? `<a href="${article.url}" target="_blank" class="btn btn-xs btn-outline-light btn-sm">Open</a>` : ''}
+          <button class="btn btn-xs btn-outline-info btn-sm analyze-news-btn">AI View</button>
+        </div>
+      </div>
+    `;
+
+    const analyzeBtn = li.querySelector('.analyze-news-btn');
+    analyzeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      analyzeNewsArticle(article);
+    });
+
+    return li;
+  }
+
+  function renderNewsList(container, articles, emptyText) {
+    if (!container) return;
+    container.innerHTML = '';
+    if (!articles.length) {
+      const empty = document.createElement('div');
+      empty.className = 'list-group-item text-muted small text-center';
+      empty.textContent = emptyText;
+      container.appendChild(empty);
+      return;
+    }
+    articles.forEach(a => {
+      container.appendChild(buildNewsItem(a));
+    });
+  }
+
+  function applyTopicFilter(articles) {
+    return articles.filter(a => matchesTopic(a, currentTopicFilter));
+  }
+
+  function renderAllNewsCards() {
+    if (!latestNewsData || !Array.isArray(latestNewsData)) return;
+
+    const all = latestNewsData.slice();
+    const topicFiltered = applyTopicFilter(all);
+
+    const watchlistArticles = topicFiltered.filter(articleMatchesWatchlist);
+    const stockSpecificArticles = topicFiltered.filter(a => (a.tickers || []).length > 0);
+    const benzingaArticles = topicFiltered.filter(a => a.source === 'Benzinga');
+    const finnhubArticles = topicFiltered.filter(a => a.source === 'Finnhub');
+
+    renderNewsList(
+      watchlistNewsList,
+      watchlistArticles,
+      watchlist.length ? 'No recent headlines for your watchlist yet.' : 'Add tickers above to start watchlist filtering.'
+    );
+    renderNewsList(
+      stockSpecificNewsList,
+      stockSpecificArticles,
+      'No stock-specific headlines found for this topic filter.'
+    );
+    renderNewsList(
+      benzingaNewsList,
+      benzingaArticles,
+      'No Benzinga headlines for this topic filter.'
+    );
+    renderNewsList(
+      finnhubNewsList,
+      finnhubArticles,
+      'No Finnhub headlines for this topic filter.'
+    );
+  }
+
+  async function fetchNews() {
+    try {
+      if (refreshNewsBtn) {
+        refreshNewsBtn.disabled = true;
+        refreshNewsBtn.textContent = 'Loading...';
+      }
+
+      const resp = await fetch('/api/news/headlines?limit=80', { method: 'GET' });
+      const result = await resp.json();
+
+      if (!result.success) {
+        console.error('News API error:', result.error);
+        return;
+      }
+
+      latestNewsData = result.data || [];
+      renderAllNewsCards();
+    } catch (err) {
+      console.error('News fetch error:', err);
+    } finally {
+      if (refreshNewsBtn) {
+        refreshNewsBtn.disabled = false;
+        refreshNewsBtn.textContent = '🔄 Refresh Headlines';
+      }
+    }
+  }
+
+  // AI analysis for a single news article
+  async function analyzeNewsArticle(article) {
+    if (!newsAnalysisCard) return;
+
+    newsAnalysisCard.innerHTML = `
+      <div class="small text-muted">Analyzing with AI...</div>
+    `;
+    newsAnalysisCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    try {
+      const resp = await fetch('/api/news/analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          article,
+          symbol: (article.tickers && article.tickers[0]) || null
+        })
+      });
+      const result = await resp.json();
+
+      if (!result.success) {
+        newsAnalysisCard.innerHTML = `
+          <div class="text-danger small">
+            AI analysis failed: ${result.error || 'Unknown error'}
+          </div>
         `;
-    }
+        return;
+      }
 
-    if (newsRefreshBtn) {
-        newsRefreshBtn.addEventListener('click', fetchNewsHeadlines);
-    }
+      const data = result.data || {};
+      const stance = (data.stance || 'neutral').toUpperCase();
+      const impact = (data.impact_level || 'medium').toUpperCase();
+      const summary = data.summary || article.summary || article.headline || '';
+      const rationale = Array.isArray(data.rationale) ? data.rationale : [];
+      const riskNotes = data.risk_notes || '';
+      const disclaimer = data.disclaimer || 'This is not personalized financial advice.';
 
-    // SCANNER FUNCTIONS
-    async function fetchData() {
-        runScanBtn.textContent = 'Scanning...';
-        runScanBtn.disabled = true;
+      newsAnalysisCard.innerHTML = `
+        <div class="card-header bg-dark text-white p-2">
+          <strong>AI News View</strong>
+          <span class="badge bg-info ms-2">${stance}</span>
+          <span class="badge bg-warning text-dark ms-1">Impact: ${impact}</span>
+        </div>
+        <div class="card-body p-3">
+          <p class="mb-2"><strong>Headline:</strong> ${article.headline || ''}</p>
+          <p class="mb-2"><strong>Summary:</strong> ${summary}</p>
 
-        try {
-            const response = await fetch('/api/scan', { method: 'POST' });
-            const result = await response.json();
-
-            if (result.success) {
-                allAlertData = result;
-                displayAlerts(result);
-                lastUpdated.textContent = `Last Scan: ${new Date().toLocaleTimeString()}`;
-            } else {
-                console.error("API Error:", result.error);
-                alert(`Scanner Failed: ${result.error}`);
+          <p class="mb-1"><strong>Why this matters:</strong></p>
+          <ul class="mb-2">
+            ${
+              rationale.length
+                ? rationale.map(r => `<li>${r}</li>`).join('')
+                : '<li>No detailed rationale provided.</li>'
             }
-        } catch (error) {
-            console.error('Fetch Error:', error);
-            alert('A network or server error occurred. Check connection.');
-        } finally {
-            runScanBtn.textContent = 'Run Scanner';
-            runScanBtn.disabled = false;
-        }
+          </ul>
+
+          <p class="mb-1"><strong>Key risks:</strong></p>
+          <p class="small mb-2">${riskNotes}</p>
+
+          <p class="small text-muted mb-0">
+            ${disclaimer}
+          </p>
+        </div>
+      `;
+    } catch (err) {
+      console.error('News analysis error:', err);
+      newsAnalysisCard.innerHTML = `
+        <div class="text-danger small">
+          AI analysis request failed due to a network/server error.
+        </div>
+      `;
     }
+  }
 
-    function displayAlerts(fullResult) {
-        const data = fullResult.data;
-        MARKET_CAPS.forEach(cap => {
-            const tableBody = document.getElementById(`${cap}-table`);
-            tableBody.innerHTML = '';
-            const alerts = data[cap] || [];
+  // ---- event wiring for news controls ----
+  if (watchlistForm) {
+    watchlistForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const raw = (watchlistInput.value || '').trim().toUpperCase();
+      if (!raw) return;
+      if (!watchlist.includes(raw)) {
+        watchlist.push(raw);
+        saveWatchlistToStorage();
+        renderWatchlistBadges();
+        renderAllNewsCards();
+      }
+      watchlistInput.value = '';
+    });
+  }
 
-            if (alerts.length === 0) {
-                tableBody.innerHTML = `
-                    <tr>
-                        <td colspan="3" class="text-center text-muted">
-                            No high-probability setups detected.
-                        </td>
-                    </tr>`;
-                return;
-            }
+  if (topicFilterSelect) {
+    topicFilterSelect.addEventListener('change', (e) => {
+      currentTopicFilter = e.target.value || 'all';
+      saveTopicFilterToStorage();
+      renderAllNewsCards();
+    });
+  }
 
-            alerts.forEach(alert => {
-                const row = document.createElement('tr');
-                row.className = 'alert-row';
-                row.setAttribute('data-cap', cap);
-                row.setAttribute('data-ticker', alert.Ticker);
+  if (refreshNewsBtn) {
+    refreshNewsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      fetchNews();
+    });
+  }
 
-                row.onclick = function() {
-                    if (currentActiveRow) {
-                        currentActiveRow.classList.remove('active');
-                    }
-                    this.classList.add('active');
-                    currentActiveRow = this;
-                    showAnalysisCard(cap, alert.Ticker);
-                };
+  // ---- initial load ----
+  loadWatchlistFromStorage();
+  loadTopicFilterFromStorage();
+  renderWatchlistBadges();
+  fetchNews();   // only fetch once at load; refresh button can refetch
 
-                row.innerHTML = `
-                    <td>
-                        <strong class="text-ticker">${alert.Ticker}</strong>
-                        <span class="badge ${
-                            alert.PrimaryCatalyst &&
-                            (alert.PrimaryCatalyst.toLowerCase().includes('sec filing') ||
-                             alert.PrimaryCatalyst.toLowerCase().includes('news'))
-                            ? 'bg-danger'
-                            : 'bg-info'
-                        }">
-                            ${alert.PrimaryCatalyst ? 'CATALYST' : 'TECH'}
-                        </span>
-                    </td>
-                    <td>$${parseFloat(alert.EntryPrice).toFixed(2)}</td>
-                    <td>
-                        <strong class="text-gain-percent">
-                            +${parseFloat(alert.PotentialGainPercent).toFixed(2)}%
-                        </strong>
-                        <span class="text-muted small">
-                            @$${parseFloat(alert.TargetPrice).toFixed(2)}
-                        </span>
-                    </td>
-                `;
-                tableBody.appendChild(row);
-            });
-        });
-
-        const firstCap = MARKET_CAPS.find(cap => data[cap] && data[cap].length > 0);
-        if (firstCap && data[firstCap].length > 0) {
-            const firstRow = document.querySelector(`#${firstCap}-table tr`);
-            if (firstRow) firstRow.click();
-        }
-    }
-
-    function showAnalysisCard(cap, ticker) {
-        const analysisDiv = document.getElementById('detailedAnalysisCard');
-        const alertData = allAlertData.data[cap];
-        if (!alertData) return;
-
-        const alert = alertData.find(a => a.Ticker === ticker);
-        if (!alert) {
-            analysisDiv.innerHTML = `
-                <p class="text-center p-4 text-muted mb-0">
-                    Analysis data not found.
-                </p>`;
-            return;
-        }
-
-        const analysisPoints = alert.DetailedAnalysis.split('\n')
-            .filter(item => item.trim().startsWith('*'))
-            .map(item => `<li>${item.trim().substring(1).trim()}</li>`)
-            .join('');
-
-        analysisDiv.innerHTML = `
-            <div class="card-header bg-dark text-white p-3">
-                <h4 class="mb-0 text-info">
-                    ${alert.Ticker} - Trading Thesis & Action Plan
-                </h4>
-            </div>
-            <div class="card-body p-4">
-                <div class="row">
-                    <div class="col-md-6 border-end border-secondary">
-                        <h5>
-                            Trade Setup & Thesis
-                            <span class="badge bg-warning text-dark">WHY NOW?</span>
-                        </h5>
-                        <ul class="list-unstyled">${analysisPoints}</ul>
-                        <p class="mt-3">
-                            <strong>Primary Catalyst:</strong>
-                            <span class="text-light">${alert.PrimaryCatalyst}</span>
-                        </p>
-                    </div>
-                    <div class="col-md-6">
-                        <h5>
-                            Actionable Strategy
-                            <span class="badge bg-primary">THE PLAN</span>
-                        </h5>
-                        <p class="mb-1">
-                            <strong>Entry Trigger:</strong>
-                            <span class="text-success fs-5">
-                                $${parseFloat(alert.EntryPrice).toFixed(2)}
-                            </span>
-                        </p>
-                        <p class="mb-1">
-                            <strong>Target Profit (Exit):</strong>
-                            <span class="text-info fs-5">
-                                $${parseFloat(alert.TargetPrice).toFixed(2)}
-                            </span>
-                        </p>
-                        <p class="mb-1">
-                            <strong>Potential Gain:</strong>
-                            <span class="text-gain-percent fs-4">
-                                ${parseFloat(alert.PotentialGainPercent).toFixed(2)}%
-                            </span>
-                        </p>
-                        <p class="mb-1">
-                            <strong>Maximum Stop Loss:</strong>
-                            <span class="text-danger fs-5">
-                                $${parseFloat(alert.StopPrice).toFixed(2)}
-                            </span>
-                        </p>
-                        <small class="text-muted">
-                            Tier: ${cap}. Calculated Risk/Reward is implicitly based on these levels.
-                        </small>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    runScanBtn.addEventListener('click', fetchData);
-
-    // load news on page open
-    fetchNewsHeadlines();
 </script>
 </body>
 </html>
