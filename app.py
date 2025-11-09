@@ -220,12 +220,11 @@ def fetch_alert_rows_by_ticker(ticker: str, limit: int = 30) -> List[Dict[str, A
     return cached[:limit]
 
 
-def fetch_all_alert_rows() -> List[Dict[str, Any]]:
+def fetch_all_alert_rows(limit: int = None) -> List[Dict[str, Any]]:
     conn = sqlite3.connect(ALERT_HISTORY_DB)
     conn.row_factory = sqlite3.Row
     try:
-        cur = conn.execute(
-            """
+        query = """
             SELECT
                 timestamp_iso,
                 date,
@@ -235,8 +234,11 @@ def fetch_all_alert_rows() -> List[Dict[str, Any]]:
                 ticker,
                 entry
             FROM alert_history
-            """
-        )
+            ORDER BY timestamp_iso DESC
+        """
+        if limit:
+            query += f" LIMIT {int(limit)}"
+        cur = conn.execute(query)
         rows = [dict(r) for r in cur.fetchall()]
         if rows:
             return rows
@@ -479,6 +481,8 @@ Catalyst: Nice-to-have; tag if present.
 
 Risk discipline: R/R ≥ 2.0:1.
 
+Momentum telemetry: Only include tickers where you can provide BOTH MomentumScore (0‑100) and VolumeVsAvg (≥1.2). If that data is unavailable, pick another name. Favor liquid names (LiquidityUSD ≥ $5M) and ensure these setups feel distinct from catalyst ideas (no reliance on fresh news).
+
 Quantity & ranking: 5–10 per bucket if feasible, rank strongest→weakest.
 
 OUTPUT: Exactly the ScannerResponse schema. JSON only.
@@ -504,6 +508,8 @@ Technical preference: Clean reaction (breakout/base/trend resumption). Avoid one
 Risk guideline: Prefer R/R ≥ 2.0:1; include slightly lower only if catalyst is exceptionally strong (flag risk in analysis).
 
 Quantity & ranking: 5–10 per bucket if news flow allows. Rank strongest→weakest by catalyst power, technicals, and R/R.
+
+Catalyst enforcement: Every alert MUST cite a concrete event (FDA, SEC, Earnings, M&A / Strategic, Guidance/Analyst, Macro/Sector). Set CatalystType accordingly (never "None"), describe the event inside PrimaryCatalyst, and ensure DecisionFactors reference it specifically. Skip any ticker lacking a verifiable catalyst within 72h.
 
 OUTPUT: Exactly the ScannerResponse schema. JSON only.
 """ + SCANNER_RESPONSE_SCHEMA
@@ -955,7 +961,7 @@ def api_history_summary():
     Aggregate history by ticker for the History tab.
     Returns per-ticker stats and current performance from last entry.
     """
-    alert_rows = fetch_all_alert_rows()
+    alert_rows = fetch_all_alert_rows(limit=2000)
     if not alert_rows:
         return jsonify({"success": True, "data": []})
 
@@ -1203,6 +1209,108 @@ def api_news_analysis():
         }), 500
 
 
+def count_alerts(data: Dict[str, Any]) -> int:
+    total = 0
+    for bucket in ["SmallCap", "MidCap", "LargeCap"]:
+        alerts = data.get(bucket) or []
+        total += len(alerts)
+    return total
+
+
+def dedupe_alerts(data: Dict[str, Any]) -> Dict[str, Any]:
+    seen = set()
+    for bucket in ["SmallCap", "MidCap", "LargeCap"]:
+        unique = []
+        for alert in data.get(bucket, []) or []:
+            ticker = (alert.get("Ticker") or "").upper()
+            key = (ticker, alert.get("SetupType"), alert.get("PrimaryCatalyst"))
+            if ticker and key not in seen:
+                seen.add(key)
+                unique.append(alert)
+        data[bucket] = unique
+    return data
+
+
+def should_trigger_fallback(profile: str, data: Dict[str, Any]) -> bool:
+    min_total = 6 if profile in ("pro_trader", "catalyst") else 3
+    min_bucket = 2 if profile in ("pro_trader", "catalyst") else 0
+    total = count_alerts(data)
+    if total >= min_total:
+        return False
+    for bucket in ["SmallCap", "MidCap", "LargeCap"]:
+        if len(data.get(bucket) or []) < min_bucket:
+            return True
+    return False
+
+
+def merge_scanner_data(primary: Dict[str, Any], fallback: Dict[str, Any]) -> Dict[str, Any]:
+    merged = {k: list(primary.get(k, [])) for k in ["SmallCap", "MidCap", "LargeCap"]}
+    for bucket in ["SmallCap", "MidCap", "LargeCap"]:
+        merged[bucket].extend(fallback.get(bucket, []) or [])
+    return dedupe_alerts(merged)
+
+
+def build_user_prompt(profile: str) -> str:
+    return (
+        "Begin scan now. For each of SmallCap, MidCap, and LargeCap, "
+        "try to return between 5 and 10 candidates that satisfy the rules in the system prompt.\n"
+        "Only exclude names if they clearly fail the risk/reward or catalyst conditions.\n"
+        "Rank the candidates in each bucket from strongest to weakest based on their risk/reward "
+        "and quality of setup (strongest at the top).\n\n"
+        "IMPORTANT: Your ENTIRE reply must be ONE JSON object only:\n"
+        "{\"SmallCap\": [...], \"MidCap\": [...], \"LargeCap\": [...]} \n"
+        "Do NOT include any explanation, commentary, or markdown outside of this JSON."
+    )
+
+
+def build_fallback_prompt(profile: str) -> str:
+    if profile == "pro_trader":
+        return (
+            "The previous scan returned too few momentum setups. Relax the filters slightly: "
+            "allow VolumeVsAvg down to 1.0 and LiquidityUSD down to 2,000,000 while still meeting the profile rules. "
+            "Return NEW symbols not already surfaced in this session, maintaining JSON schema compliance."
+        )
+    if profile == "catalyst":
+        return (
+            "The previous scan returned too few catalyst setups. Expand the search to include credible sector/macro catalysts "
+            "and events up to 5 days old. Every alert still requires a specific catalyst detail with CatalystType set accurately. "
+            "Return NEW tickers not already provided."
+        )
+    return (
+        "The previous scan returned too few valid ideas. Relax non-critical filters slightly but maintain "
+        "risk discipline and schema requirements. Provide additional unique tickers."
+    )
+
+
+def call_perplexity(system_prompt: str, user_prompt: str, extra_user_prompt: str = "") -> Dict[str, Any]:
+    raw_json_string = ""
+    try:
+        messages = [{"role": "system", "content": system_prompt}]
+        if extra_user_prompt:
+            user_content = f"{user_prompt}\n\nAdditional instructions:\n{extra_user_prompt}"
+        else:
+            user_content = user_prompt
+        messages.append({"role": "user", "content": user_content})
+
+        response = pplx_client.chat.completions.create(
+            model="sonar-pro",
+            messages=messages,
+            extra_body={"search_recency_filter": "day"}
+        )
+        raw_json_string = response.choices[0].message.content or ""
+        json_string = extract_json_from_text(raw_json_string)
+        data = json.loads(json_string)
+        if not isinstance(data, dict):
+            raise ValueError("Perplexity response was not a JSON object.")
+        for key in ["SmallCap", "MidCap", "LargeCap"]:
+            data.setdefault(key, [])
+        return data
+    except Exception as exc:
+        logging.error(f"Perplexity call error: {type(exc).__name__} - {exc}")
+        logging.error(f"RAW AI OUTPUT RECEIVED: {repr(raw_json_string)}")
+        raise
+
+
 @app.route("/api/scan", methods=["POST"])
 @auth.login_required
 def run_scanner_api():
@@ -1220,8 +1328,6 @@ def run_scanner_api():
             "error": "PPLX_API_KEY is missing or invalid. Cannot connect to Perplexity."
         }), 503
 
-    raw_json_string = ""
-
     try:
         payload = request.get_json(silent=True) or {}
         profile = (payload.get("profile") or "hedge_fund").lower()
@@ -1235,58 +1341,27 @@ def run_scanner_api():
             profile = "hedge_fund"
 
         logging.info(f"Sending request to Perplexity API for scanner profile: {profile}")
+        primary = call_perplexity(system_prompt, build_user_prompt(profile))
 
-        response = pplx_client.chat.completions.create(
-            model="sonar-pro",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": (
-                        "Begin scan now. For each of SmallCap, MidCap, and LargeCap, "
-                        "try to return between 5 and 10 candidates that satisfy the rules in the system prompt.\n"
-                        "Only exclude names if they clearly fail the risk/reward or catalyst conditions.\n"
-                        "Rank the candidates in each bucket from strongest to weakest based on their risk/reward "
-                        "and quality of setup (strongest at the top).\n\n"
-                        "IMPORTANT: Your ENTIRE reply must be ONE JSON object only:\n"
-                        "{\"SmallCap\": [...], \"MidCap\": [...], \"LargeCap\": [...]} \n"
-                        "Do NOT include any explanation, commentary, or markdown outside of this JSON."
-                    )
-                }
-            ],
-            extra_body={
-                "search_recency_filter": "day"
-            }
-        )
-
-        raw_json_string = response.choices[0].message.content or ""
-        logging.info(f"RAW SCANNER OUTPUT (truncated): {repr(raw_json_string[:500])}")
-
-        json_string = extract_json_from_text(raw_json_string)
-        logging.info(f"EXTRACTED JSON CANDIDATE (truncated): {repr(json_string[:500])}")
-
-        data = None
-
-        try:
-            data = json.loads(json_string)
-        except JSONDecodeError as e:
-            logging.error(f"json.loads failed: {e}")
+        fallback_used = False
+        if profile != "hedge_fund" and should_trigger_fallback(profile, primary):
+            logging.info(f"Primary scan sparse for profile {profile}; attempting fallback.")
             try:
-                data = ast.literal_eval(json_string)
-            except Exception as e2:
-                logging.error(f"ast.literal_eval also failed: {e2}")
+                fallback = call_perplexity(
+                    system_prompt,
+                    build_user_prompt(profile),
+                    build_fallback_prompt(profile)
+                )
+                primary = merge_scanner_data(primary, fallback)
+                fallback_used = True
+            except Exception as exc:
+                logging.error(f"Fallback scan failed for {profile}: {exc}")
 
-        if not isinstance(data, dict):
-            logging.error("Scanner output could not be parsed into a dict; returning empty structure.")
-            empty_data = {"SmallCap": [], "MidCap": [], "LargeCap": []}
-            return jsonify({
-                "success": True,
-                "data": empty_data,
-                "warning": "AI output malformed; returned empty scan result."
-            })
-
-        for key in ["SmallCap", "MidCap", "LargeCap"]:
-            data.setdefault(key, [])
+        data = dedupe_alerts(primary)
+        if fallback_used:
+            for bucket in ["SmallCap", "MidCap", "LargeCap"]:
+                for alert in data.get(bucket, []) or []:
+                    alert.setdefault("Notes", "Auto-expanded criteria to satisfy idea quota.")
 
         try:
             data = enrich_scanner_with_realtime_prices(data)
@@ -1298,11 +1373,18 @@ def run_scanner_api():
         except Exception as e:
             logging.error(f"Failed to record alert history: {e}")
 
-        return jsonify({"success": True, "data": data})
+        meta = {}
+        if fallback_used:
+            meta["notes"] = "Relaxed criteria to round out this scan."
+
+        response_payload = {"success": True, "data": data}
+        if meta:
+            response_payload["meta"] = meta
+
+        return jsonify(response_payload)
 
     except Exception as e:
         logging.error(f"Scanner error: {type(e).__name__} - {e}")
-        logging.error(f"RAW AI OUTPUT RECEIVED: {repr(raw_json_string)}")
 
         return jsonify({
             "success": False,
