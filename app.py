@@ -4,6 +4,7 @@ import re
 import logging
 import ast
 import sqlite3
+import time
 from json import JSONDecodeError
 from datetime import datetime, date
 from typing import List, Dict, Any, Tuple, Iterable
@@ -60,6 +61,7 @@ else:
 # --- External API keys ---
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
 BENZINGA_API_KEY = os.environ.get("BENZINGA_API_KEY")
+PRICE_ENRICH_TIMEOUT = float(os.environ.get("SCANNER_PRICE_ENRICH_TIMEOUT", "18"))
 
 PROFILE_LABELS = {
     "hedge_fund": "Hedge Fund PM",
@@ -727,7 +729,7 @@ def fetch_finnhub_quote_data(symbol: str) -> Dict[str, Any]:
         "token": FINNHUB_API_KEY
     }
     try:
-        resp = requests.get(url, params=params, timeout=5)
+        resp = requests.get(url, params=params, timeout=3)
         resp.raise_for_status()
         data = resp.json()
         return data if isinstance(data, dict) else {}
@@ -812,7 +814,17 @@ def enrich_scanner_with_realtime_prices(data: Dict[str, Any]) -> Dict[str, Any]:
                 tickers.add(t)
 
     quotes: Dict[str, float] = {}
-    for t in tickers:
+    start = time.monotonic()
+    for idx, t in enumerate(tickers, start=1):
+        if time.monotonic() - start > PRICE_ENRICH_TIMEOUT:
+            logging.warning(
+                "Price enrichment aborted after %.1fs (%d/%d tickers processed).",
+                time.monotonic() - start,
+                idx - 1,
+                len(tickers)
+            )
+            break
+
         price = get_finnhub_quote(t)
         if price:
             quotes[t] = price

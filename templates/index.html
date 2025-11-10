@@ -862,6 +862,11 @@
         scannerError.classList.remove('d-none');
     }
 
+    function stripHtml(text) {
+        if (!text) return '';
+        return text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
     const btnProfileHedge = document.getElementById('btnProfileHedge');
     const btnProfilePro = document.getElementById('btnProfilePro');
     const btnProfileCat = document.getElementById('btnProfileCat');
@@ -890,17 +895,21 @@
                 body: JSON.stringify({ profile: currentProfile })
             });
 
-            let result;
-            const contentType = resp.headers.get('content-type') || '';
-            if (contentType.includes('application/json')) {
-                result = await resp.json();
-            } else {
-                const raw = await resp.text();
-                throw new Error(`Unexpected response format (status ${resp.status}): ${raw.slice(0, 200)}`);
+            const raw = await resp.text();
+            let result = null;
+            try {
+                result = JSON.parse(raw);
+            } catch (parseErr) {
+                result = null;
             }
 
             if (!resp.ok) {
-                throw new Error(result?.error || `HTTP ${resp.status}`);
+                const message = result?.error || stripHtml(raw) || `Server error (${resp.status}).`;
+                throw new Error(message);
+            }
+
+            if (!result || typeof result !== 'object') {
+                throw new Error('Scanner returned an unreadable response. Please retry.');
             }
 
             if (!result.success) {
