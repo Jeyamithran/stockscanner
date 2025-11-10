@@ -12,6 +12,7 @@ import requests
 from flask import Flask, jsonify, render_template, request
 from flask_httpauth import HTTPBasicAuth
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.exceptions import HTTPException, InternalServerError
 from dotenv import load_dotenv
 from openai import OpenAI
 import xml.etree.ElementTree as ET
@@ -1227,6 +1228,18 @@ def dedupe_alerts(data: Dict[str, Any]) -> Dict[str, Any]:
     return data
 
 
+def _api_error_response(message: str, status_code: int):
+    return jsonify({
+        "success": False,
+        "error": message or "Unexpected server error.",
+        "data": {
+            "SmallCap": [],
+            "MidCap": [],
+            "LargeCap": []
+        }
+    }), status_code
+
+
 def should_trigger_fallback(profile: str, data: Dict[str, Any]) -> bool:
     min_total = 6 if profile in ("pro_trader", "catalyst") else 3
     min_bucket = 2 if profile in ("pro_trader", "catalyst") else 0
@@ -1395,9 +1408,24 @@ def dashboard_view():
     return render_template("index.html")
 
 
-@app.errorhandler(401)
-def unauthorized(error):
-    return 'Login Required: Please enter your credentials to access the Black Box Scanner.', 401
+@app.errorhandler(HTTPException)
+def handle_http_error(error):
+    if request.path.startswith("/api/"):
+        return _api_error_response(error.description or error.name, error.code)
+    if error.code == 401:
+        return (
+            "Login Required: Please enter your credentials to access the Black Box Scanner.",
+            401
+        )
+    return error
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_exception(error):
+    logging.exception("Unhandled server error: %s", error)
+    if request.path.startswith("/api/"):
+        return _api_error_response("Scanner failed due to server error.", 500)
+    return InternalServerError()
 
 
 if __name__ == "__main__":

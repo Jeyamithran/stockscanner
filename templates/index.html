@@ -477,6 +477,8 @@
                     Run Scanner
                 </button>
                 <p id="lastUpdated" class="text-muted small mb-0 mt-1">Last scan: never</p>
+                <div id="scannerError" class="alert alert-danger small py-1 px-2 mt-2 mb-0 d-none text-start">
+                </div>
             </div>
         </div>
     </div>
@@ -846,6 +848,19 @@
 
     const runScanBtn = document.getElementById('runScanBtn');
     const lastUpdated = document.getElementById('lastUpdated');
+    const scannerError = document.getElementById('scannerError');
+
+    function clearScannerError() {
+        if (!scannerError) return;
+        scannerError.textContent = '';
+        scannerError.classList.add('d-none');
+    }
+
+    function showScannerError(message) {
+        if (!scannerError) return;
+        scannerError.textContent = message;
+        scannerError.classList.remove('d-none');
+    }
 
     const btnProfileHedge = document.getElementById('btnProfileHedge');
     const btnProfilePro = document.getElementById('btnProfilePro');
@@ -866,6 +881,7 @@
     async function fetchScan() {
         runScanBtn.disabled = true;
         runScanBtn.textContent = 'Scanning...';
+        clearScannerError();
 
         try {
             const resp = await fetch('/api/scan', {
@@ -889,7 +905,7 @@
 
             if (!result.success) {
                 console.error('Scanner error:', result.error);
-                alert('Scanner error: ' + (result.error || 'Unknown error'));
+                showScannerError('Scanner error: ' + (result.error || 'Unknown error'));
                 return;
             }
 
@@ -906,7 +922,7 @@
             }
         } catch (err) {
             console.error('Scanner fetch error', err);
-            alert('Scanner error: ' + (err?.message || 'Scanner failed due to server error.'));
+            showScannerError('Scanner error: ' + (err?.message || 'Scanner failed due to server error.'));
         } finally {
             runScanBtn.disabled = false;
             runScanBtn.textContent = 'Run Scanner';
