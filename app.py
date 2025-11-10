@@ -62,6 +62,8 @@ else:
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
 BENZINGA_API_KEY = os.environ.get("BENZINGA_API_KEY")
 PRICE_ENRICH_TIMEOUT = float(os.environ.get("SCANNER_PRICE_ENRICH_TIMEOUT", "18"))
+FINNHUB_CACHE_TTL = float(os.environ.get("FINNHUB_CACHE_TTL_SECONDS", "45"))
+FINNHUB_RATE_LIMIT_SECONDS = float(os.environ.get("FINNHUB_RATE_LIMIT_SECONDS", "0.25"))
 
 PROFILE_LABELS = {
     "hedge_fund": "Hedge Fund PM",
@@ -174,6 +176,8 @@ def insert_alert_rows(rows: Iterable[Tuple[Any, ...]]) -> None:
 
 
 ALERT_HISTORY_CACHE: List[Dict[str, Any]] = []
+FINNHUB_QUOTE_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+LAST_FINNHUB_REQUEST = 0.0
 
 
 def load_alert_history_cache() -> None:
@@ -762,18 +766,43 @@ def fetch_finnhub_quote_data(symbol: str) -> Dict[str, Any]:
     if not FINNHUB_API_KEY or not symbol:
         return {}
     url = "https://finnhub.io/api/v1/quote"
+    symbol = symbol.upper()
+    cache_key = symbol
+    now = time.monotonic()
+    cached = FINNHUB_QUOTE_CACHE.get(cache_key)
+    if cached and now - cached[0] < FINNHUB_CACHE_TTL:
+        return cached[1]
+
     params = {
-        "symbol": symbol.upper(),
+        "symbol": symbol,
         "token": FINNHUB_API_KEY
     }
+
+    global LAST_FINNHUB_REQUEST
+    elapsed = now - LAST_FINNHUB_REQUEST
+    if elapsed < FINNHUB_RATE_LIMIT_SECONDS:
+        time.sleep(FINNHUB_RATE_LIMIT_SECONDS - elapsed)
+    LAST_FINNHUB_REQUEST = time.monotonic()
+
     try:
         resp = requests.get(url, params=params, timeout=3)
         resp.raise_for_status()
         data = resp.json()
-        return data if isinstance(data, dict) else {}
+        if isinstance(data, dict):
+            FINNHUB_QUOTE_CACHE[cache_key] = (time.monotonic(), data)
+            return data
+        FINNHUB_QUOTE_CACHE[cache_key] = (time.monotonic(), {})
+    except requests.HTTPError as http_error:
+        status = getattr(http_error.response, "status_code", None)
+        if status == 429:
+            logging.warning(f"Finnhub rate limit hit for {symbol}. Using cached empty payload for {FINNHUB_CACHE_TTL}s.")
+            FINNHUB_QUOTE_CACHE[cache_key] = (time.monotonic(), {})
+        else:
+            logging.error(f"Finnhub quote HTTP error for {symbol}: {http_error}")
     except Exception as e:
         logging.error(f"Finnhub quote error for {symbol}: {e}")
-    return {}
+
+    return FINNHUB_QUOTE_CACHE.get(cache_key, (time.monotonic(), {}))[1]
 
 
 def get_finnhub_quote(symbol: str) -> float:
@@ -1046,7 +1075,9 @@ def api_history_summary():
                 "last_profile": format_profile_label(r.get("profile")),
                 "last_profile_key": r.get("profile"),
                 "last_tier": r.get("tier"),
-                "last_entry": entry
+                "last_entry": entry,
+                "last_ai_target_price": r.get("ai_target_price"),
+                "last_ai_potential_gain_pct": r.get("ai_potential_gain_pct")
             }
 
         a = agg[ticker]
@@ -1063,6 +1094,8 @@ def api_history_summary():
             a["last_profile_key"] = r.get("profile")
             a["last_tier"] = r.get("tier")
             a["last_entry"] = entry
+            a["last_ai_target_price"] = r.get("ai_target_price")
+            a["last_ai_potential_gain_pct"] = r.get("ai_potential_gain_pct")
 
     # Fetch current prices and compute performance from last entry
     for ticker, a in agg.items():

@@ -734,7 +734,8 @@
                     <div>
                         <h5 class="mb-0">Alert Performance History</h5>
                         <small class="text-muted">
-                            Aggregated from all past scans, ranked by performance from last entry.
+                            Aggregated from all past scans, ranked by performance from last entry. Includes the AI’s
+                            original target & potential gain so you can audit each setup later.
                         </small>
                     </div>
                 </div>
@@ -783,6 +784,12 @@
                                 <th class="history-sortable" data-history-sort="last_entry">
                                     Last Entry <span class="sort-indicator"></span>
                                 </th>
+                                <th class="history-sortable" data-history-sort="last_ai_target_price">
+                                    AI Target <span class="sort-indicator"></span>
+                                </th>
+                                <th class="history-sortable" data-history-sort="last_ai_potential_gain_pct">
+                                    AI Gain % <span class="sort-indicator"></span>
+                                </th>
                                 <th class="history-sortable" data-history-sort="current_price">
                                     Current <span class="sort-indicator"></span>
                                 </th>
@@ -799,7 +806,7 @@
                             </thead>
                             <tbody id="history-table-body">
                             <tr>
-                                <td colspan="9" class="text-center text-muted py-3">
+                                <td colspan="11" class="text-center text-muted py-3">
                                     History will appear here after you run scans.
                                 </td>
                             </tr>
@@ -1615,7 +1622,7 @@
         const tbody = document.getElementById('history-table-body');
         tbody.innerHTML = `
             <tr>
-                <td colspan="9" class="text-center text-muted py-3">Loading history…</td>
+                <td colspan="11" class="text-center text-muted py-3">Loading history…</td>
             </tr>
         `;
 
@@ -1625,7 +1632,7 @@
             if (!result.success) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="9" class="text-center text-muted py-3">Error loading history.</td>
+                        <td colspan="11" class="text-center text-muted py-3">Error loading history.</td>
                     </tr>
                 `;
                 historyRowsRaw = [];
@@ -1641,7 +1648,7 @@
             const tbody2 = document.getElementById('history-table-body');
             tbody2.innerHTML = `
                 <tr>
-                    <td colspan="9" class="text-center text-muted py-3">Error loading history.</td>
+                    <td colspan="11" class="text-center text-muted py-3">Error loading history.</td>
                 </tr>
             `;
             historyRowsRaw = [];
@@ -1703,6 +1710,10 @@
                 return getNumericValue(row.alerts);
             case 'last_entry':
                 return getNumericValue(row.last_entry);
+            case 'last_ai_target_price':
+                return getNumericValue(row.last_ai_target_price);
+            case 'last_ai_potential_gain_pct':
+                return getNumericValue(row.last_ai_potential_gain_pct);
             case 'current_price':
                 return getNumericValue(row.current_price);
             case 'current_change_pct':
@@ -1977,7 +1988,7 @@
                 : 'No alerts recorded yet. Run the scanner to build history.';
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="9" class="text-center text-muted py-3">
+                    <td colspan="11" class="text-center text-muted py-3">
                         ${message}
                     </td>
                 </tr>
@@ -1992,8 +2003,16 @@
             const lastProfile = r.last_profile || '';
             const lastTier = r.last_tier || '';
             const lastEntry = (typeof r.last_entry === 'number') ? r.last_entry.toFixed(2) : (r.last_entry || '-');
+            const aiTargetVal = r.last_ai_target_price;
+            const aiGainVal = r.last_ai_potential_gain_pct;
             const currentPrice = (typeof r.current_price === 'number') ? r.current_price.toFixed(2) : (r.current_price || '-');
             const pct = (typeof r.current_change_pct === 'number') ? r.current_change_pct.toFixed(2) + '%' : '-';
+            const aiTarget = (typeof aiTargetVal === 'number')
+                ? aiTargetVal.toFixed(2)
+                : (aiTargetVal || '-');
+            const aiGain = (typeof aiGainVal === 'number')
+                ? aiGainVal.toFixed(2) + '%'
+                : (typeof aiGainVal === 'string' && aiGainVal.trim().length ? aiGainVal : '-');
             const firstDate = r.first_date || '';
             const lastDate = r.last_date || '';
 
@@ -2006,6 +2025,8 @@
                 <td>${lastProfile}</td>
                 <td>${lastTier}</td>
                 <td>${lastEntry === '-' ? '-' : '$' + lastEntry}</td>
+                <td>${aiTarget === '-' ? '-' : '$' + aiTarget}</td>
+                <td>${aiGain}</td>
                 <td>${currentPrice === '-' ? '-' : '$' + currentPrice}</td>
                 <td>${pct}</td>
                 <td>${firstDate}</td>
