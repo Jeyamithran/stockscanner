@@ -98,9 +98,11 @@ def init_alert_history_db() -> None:
                 ticker TEXT,
                 entry REAL,
                 target REAL,
+                ai_target_price REAL,
                 stop REAL,
                 scan_price REAL,
                 potential_gain_pct REAL,
+                ai_potential_gain_pct REAL,
                 primary_catalyst TEXT,
                 detailed_analysis TEXT
             )
@@ -113,6 +115,27 @@ def init_alert_history_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_alert_history_timestamp ON alert_history(timestamp_iso)"
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def ensure_alert_history_columns() -> None:
+    """Add newly required columns to alert_history if they are missing."""
+    conn = sqlite3.connect(ALERT_HISTORY_DB)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.execute("PRAGMA table_info(alert_history)")
+        existing = {row["name"] for row in cur.fetchall()}
+        alters = []
+        if "ai_target_price" not in existing:
+            alters.append("ALTER TABLE alert_history ADD COLUMN ai_target_price REAL")
+        if "ai_potential_gain_pct" not in existing:
+            alters.append("ALTER TABLE alert_history ADD COLUMN ai_potential_gain_pct REAL")
+
+        for stmt in alters:
+            conn.execute(stmt)
+        if alters:
+            conn.commit()
     finally:
         conn.close()
 
@@ -134,12 +157,14 @@ def insert_alert_rows(rows: Iterable[Tuple[Any, ...]]) -> None:
                 ticker,
                 entry,
                 target,
+                ai_target_price,
                 stop,
                 scan_price,
                 potential_gain_pct,
+                ai_potential_gain_pct,
                 primary_catalyst,
                 detailed_analysis
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows
         )
@@ -167,9 +192,11 @@ def load_alert_history_cache() -> None:
                 ticker,
                 entry,
                 target,
+                ai_target_price,
                 stop,
                 scan_price,
                 potential_gain_pct,
+                ai_potential_gain_pct,
                 primary_catalyst,
                 detailed_analysis
             FROM alert_history
@@ -196,9 +223,11 @@ def fetch_alert_rows_by_ticker(ticker: str, limit: int = 30) -> List[Dict[str, A
                 ticker,
                 entry,
                 target,
+                ai_target_price,
                 stop,
                 scan_price,
                 potential_gain_pct,
+                ai_potential_gain_pct,
                 primary_catalyst,
                 detailed_analysis
             FROM alert_history
@@ -235,7 +264,11 @@ def fetch_all_alert_rows(limit: int = None) -> List[Dict[str, Any]]:
                 profile,
                 tier,
                 ticker,
-                entry
+                entry,
+                target,
+                ai_target_price,
+                potential_gain_pct,
+                ai_potential_gain_pct
             FROM alert_history
             ORDER BY timestamp_iso DESC
         """
@@ -257,13 +290,18 @@ def fetch_all_alert_rows(limit: int = None) -> List[Dict[str, Any]]:
             "profile": r.get("profile"),
             "tier": r.get("tier"),
             "ticker": r.get("ticker"),
-            "entry": r.get("entry")
+            "entry": r.get("entry"),
+            "target": r.get("target"),
+            "ai_target_price": r.get("ai_target_price"),
+            "potential_gain_pct": r.get("potential_gain_pct"),
+            "ai_potential_gain_pct": r.get("ai_potential_gain_pct")
         }
         for r in ALERT_HISTORY_CACHE
     ]
 
 
 init_alert_history_db()
+ensure_alert_history_columns()
 load_alert_history_cache()
 
 # -------------------------------------------------------------
@@ -813,6 +851,12 @@ def enrich_scanner_with_realtime_prices(data: Dict[str, Any]) -> Dict[str, Any]:
                 alert["Ticker"] = t
                 tickers.add(t)
 
+    def _to_float(val):
+        try:
+            return float(val)
+        except Exception:
+            return None
+
     quotes: Dict[str, float] = {}
     start = time.monotonic()
     for idx, t in enumerate(tickers, start=1):
@@ -836,17 +880,19 @@ def enrich_scanner_with_realtime_prices(data: Dict[str, Any]) -> Dict[str, Any]:
             if not ticker:
                 continue
 
+            target = _to_float(alert.get("TargetPrice"))
+            if target is not None and "AITargetPrice" not in alert:
+                alert["AITargetPrice"] = target
+
+            ai_gain = _to_float(alert.get("PotentialGainPercent"))
+            if ai_gain is not None and "AIPotentialGainPercent" not in alert:
+                alert["AIPotentialGainPercent"] = ai_gain
+
             rt_price = quotes.get(ticker)
             if rt_price is None:
                 continue
 
             alert["RealTimePrice"] = round(rt_price, 2)
-
-            def _to_float(val):
-                try:
-                    return float(val)
-                except Exception:
-                    return None
 
             ai_entry = _to_float(alert.get("EntryPrice"))
             if ai_entry is not None:
@@ -854,7 +900,6 @@ def enrich_scanner_with_realtime_prices(data: Dict[str, Any]) -> Dict[str, Any]:
 
             alert["EntryPrice"] = round(rt_price, 2)
 
-            target = _to_float(alert.get("TargetPrice"))
             if target is not None and rt_price > 0:
                 gain_pct = (target - rt_price) / rt_price * 100.0
                 alert["PotentialGainPercent"] = round(gain_pct, 2)
@@ -890,9 +935,11 @@ def record_alert_history(profile: str, data: Dict[str, Any]) -> None:
 
             entry = _safe_float(alert.get("EntryPrice"))
             target = _safe_float(alert.get("TargetPrice"))
+            ai_target = _safe_float(alert.get("AITargetPrice") or alert.get("TargetPrice"))
             stop = _safe_float(alert.get("StopPrice"))
             rt_price = _safe_float(alert.get("RealTimePrice"))
             pot_gain = _safe_float(alert.get("PotentialGainPercent"))
+            ai_pot_gain = _safe_float(alert.get("AIPotentialGainPercent"))
 
             rec = {
                 "timestamp_iso": timestamp_iso,
@@ -903,9 +950,11 @@ def record_alert_history(profile: str, data: Dict[str, Any]) -> None:
                 "ticker": ticker,
                 "entry": entry,
                 "target": target,
+                "ai_target_price": ai_target,
                 "stop": stop,
                 "scan_price": rt_price,
                 "potential_gain_pct": pot_gain,
+                "ai_potential_gain_pct": ai_pot_gain,
                 "primary_catalyst": alert.get("PrimaryCatalyst") or "",
                 "detailed_analysis": alert.get("DetailedAnalysis") or ""
             }
@@ -920,9 +969,11 @@ def record_alert_history(profile: str, data: Dict[str, Any]) -> None:
                     rec["ticker"],
                     rec["entry"],
                     rec["target"],
+                    rec["ai_target_price"],
                     rec["stop"],
                     rec["scan_price"],
                     rec["potential_gain_pct"],
+                    rec["ai_potential_gain_pct"],
                     rec["primary_catalyst"],
                     rec["detailed_analysis"]
                 )
@@ -1305,31 +1356,45 @@ def build_fallback_prompt(profile: str) -> str:
 
 def call_perplexity(system_prompt: str, user_prompt: str, extra_user_prompt: str = "") -> Dict[str, Any]:
     raw_json_string = ""
-    try:
-        messages = [{"role": "system", "content": system_prompt}]
-        if extra_user_prompt:
-            user_content = f"{user_prompt}\n\nAdditional instructions:\n{extra_user_prompt}"
-        else:
-            user_content = user_prompt
-        messages.append({"role": "user", "content": user_content})
+    retries = 2
+    retry_extra = extra_user_prompt or ""
 
-        response = pplx_client.chat.completions.create(
-            model="sonar-pro",
-            messages=messages,
-            extra_body={"search_recency_filter": "day"}
-        )
-        raw_json_string = response.choices[0].message.content or ""
-        json_string = extract_json_from_text(raw_json_string)
-        data = json.loads(json_string)
-        if not isinstance(data, dict):
-            raise ValueError("Perplexity response was not a JSON object.")
-        for key in ["SmallCap", "MidCap", "LargeCap"]:
-            data.setdefault(key, [])
-        return data
-    except Exception as exc:
-        logging.error(f"Perplexity call error: {type(exc).__name__} - {exc}")
-        logging.error(f"RAW AI OUTPUT RECEIVED: {repr(raw_json_string)}")
-        raise
+    for attempt in range(retries):
+        try:
+            messages = [{"role": "system", "content": system_prompt}]
+            if retry_extra:
+                user_content = f"{user_prompt}\n\nAdditional instructions:\n{retry_extra}"
+            else:
+                user_content = user_prompt
+            messages.append({"role": "user", "content": user_content})
+
+            response = pplx_client.chat.completions.create(
+                model="sonar-pro",
+                messages=messages,
+                extra_body={"search_recency_filter": "day"}
+            )
+            raw_json_string = response.choices[0].message.content or ""
+            json_string = extract_json_from_text(raw_json_string)
+            data = json.loads(json_string)
+            if not isinstance(data, dict):
+                raise ValueError("Perplexity response was not a JSON object.")
+            for key in ["SmallCap", "MidCap", "LargeCap"]:
+                data.setdefault(key, [])
+            return data
+        except JSONDecodeError as exc:
+            logging.warning("Perplexity JSON decode failed (attempt %d/%d): %s", attempt + 1, retries, exc)
+            logging.warning("RAW AI OUTPUT RECEIVED: %r", raw_json_string[:1000])
+            if attempt == retries - 1:
+                logging.error("Perplexity call error: JSONDecodeError - %s", exc)
+                raise
+            retry_extra = (
+                (extra_user_prompt + "\n\n") if extra_user_prompt else ""
+            ) + "Your previous response was invalid JSON. Reply again with STRICT valid JSON only, matching the ScannerResponse schema exactly, and include required commas between properties."
+            time.sleep(1)
+        except Exception as exc:
+            logging.error(f"Perplexity call error: {type(exc).__name__} - {exc}")
+            logging.error(f"RAW AI OUTPUT RECEIVED: {repr(raw_json_string)}")
+            raise
 
 
 @app.route("/api/scan", methods=["POST"])
