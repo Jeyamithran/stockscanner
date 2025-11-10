@@ -6,7 +6,7 @@ services:
     env: python
     region: oregon # Use a region near the US market (e.g., oregon or ohio for US)
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn app:app"
+    startCommand: "gunicorn --timeout 120 --workers 2 app:app"
     healthCheckPath: "/" # Render checks this path to ensure the app is running
 
     envVars:
