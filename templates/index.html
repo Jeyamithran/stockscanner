@@ -797,7 +797,7 @@
                             Showing 0 / 0
                         </small>
                     </div>
-                    <div class="table-responsive">
+                    <div class="table-responsive history-table-wrapper" id="historyTableWrapper">
                         <table class="table table-dark table-striped table-hover mb-0 table-sortable history-table">
                             <thead>
                             <tr>
@@ -844,6 +844,9 @@
                             </tr>
                             </tbody>
                         </table>
+                    </div>
+                    <div id="historyScrollSentinel" class="history-scroll-sentinel text-center text-muted small py-2">
+                        Scroll to load more history
                     </div>
                 </div>
             </div>
@@ -1288,6 +1291,34 @@
         nuclear: ['nuclear', 'fusion', 'fission', 'uranium', 'reactor']
     };
 
+    const topicSynonyms = {
+        'ai': 'ai',
+        'ai & automation': 'ai',
+        'automation': 'ai',
+        'artificial intelligence': 'ai',
+        'machine learning': 'ai',
+        'quantum': 'quantum',
+        'quantum computing': 'quantum',
+        'quantum tech': 'quantum',
+        'biotech': 'bio',
+        'biotech & healthtech': 'bio',
+        'healthtech': 'bio',
+        'renewable': 'renewable',
+        'renewable & cleantech': 'renewable',
+        'cleantech': 'renewable',
+        'green energy': 'renewable',
+        'cybersecurity': 'cyber',
+        'cybersecurity & cloud': 'cyber',
+        'cloud': 'cyber',
+        'synthetic biology': 'synbio',
+        'synbio': 'synbio',
+        'bci': 'bci',
+        'bci & neurotech': 'bci',
+        'neurotech': 'bci',
+        'advanced nuclear': 'nuclear',
+        'nuclear': 'nuclear'
+    };
+
     const nameToTicker = {
         tesla: 'TSLA',
         'elon musk': 'TSLA',
@@ -1308,6 +1339,19 @@
         supermicro: 'SMCI',
         amd: 'AMD',
         rivian: 'RIVN'
+    };
+
+    const tickerSmartKeywords = {
+        TSLA: ['tesla', 'elon musk', 'electric vehicle', 'ev ', 'evs', 'electric car', 'cybertruck', 'gigafactory', 'model 3', 'model y'],
+        NVDA: ['nvidia', 'ai chip', 'gpu', 'graphics card', 'cuda', 'h100', 'blackwell'],
+        AMD: ['amd', 'advanced micro devices', 'ryzen', 'radeon', 'gpu', 'chipmaker'],
+        AAPL: ['apple', 'iphone', 'ipad', 'macbook', 'vision pro'],
+        MSFT: ['microsoft', 'windows', 'azure', 'copilot'],
+        AMZN: ['amazon', 'aws', 'prime video', 'prime day'],
+        META: ['meta', 'facebook', 'instagram', 'threads', 'oculus'],
+        GOOG: ['google', 'alphabet', 'search', 'android'],
+        GOOGL: ['google', 'alphabet', 'search', 'android'],
+        RIVN: ['rivian', 'ev truck', 'electric truck']
     };
 
     function loadPersistedFilters() {
@@ -1365,8 +1409,22 @@
         return watchlist.some(item => {
             const lowered = normalizeText(item);
             const mapped = nameToTicker[lowered];
-            if (/^[A-Z]{1,6}$/.test(item) && tickers.includes(item)) return true;
+            const isTicker = /^[A-Z]{1,6}$/.test(item);
+            if (isTicker && tickers.includes(item)) return true;
             if (mapped && tickers.includes(mapped)) return true;
+            if (isTicker) {
+                const keywords = tickerSmartKeywords[item] || [];
+                if (keywords.some(keyword => text.includes(keyword))) return true;
+            }
+            if (mapped) {
+                const mappedKeywords = tickerSmartKeywords[mapped] || [];
+                if (mappedKeywords.some(keyword => text.includes(keyword))) return true;
+            }
+            const topicKey = topicSynonyms[lowered];
+            if (topicKey && topicKeywords[topicKey]) {
+                const topicWords = topicKeywords[topicKey];
+                if (topicWords.some(word => text.includes(word))) return true;
+            }
             return lowered && text.includes(lowered);
         });
     }
@@ -1698,61 +1756,101 @@
     const historyAnalysisBody = document.getElementById('history-analysis-body');
     const historyAnalysisCard = document.getElementById('history-analysis-card');
     const historyLiveQuotesToggle = document.getElementById('historyLiveQuotes');
+    const historyTableBody = document.getElementById('history-table-body');
+    const historyScrollSentinel = document.getElementById('historyScrollSentinel');
+    const HISTORY_PAGE_SIZE = 20;
+    const HISTORY_QUOTE_TTL_MS = 60000;
+    const HISTORY_MAX_QUOTE_BATCH = 20;
     let historyRowsRaw = [];
+    const historyRowLookup = new Map();
+    const historyQuoteCache = new Map();
+    let historyFilteredRows = [];
+    let historyVisibleRows = [];
+    let historyRenderedCount = 0;
+    let historyLoadingMore = false;
+    let historyExhausted = false;
+    let historyQuoteInflight = false;
     const historyFilters = { search: '', profile: '', tier: '' };
     const historySort = { key: 'current_change_pct', direction: 'desc' };
     const historyAscDefaultSortKeys = new Set(['ticker', 'last_profile', 'last_tier', 'first_date', 'last_date']);
     let activeHistoryTicker = '';
-    let historyLiveQuotesEnabled = false;
+    let historyLiveQuotesEnabled = true;
 
     async function fetchHistorySummary() {
-        const tbody = document.getElementById('history-table-body');
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="11" class="text-center text-muted py-3">Loading history…</td>
-            </tr>
-        `;
+        if (historyTableBody) {
+            historyTableBody.innerHTML = `
+                <tr>
+                    <td colspan="11" class="text-center text-muted py-3">Loading history…</td>
+                </tr>
+            `;
+        }
+        updateHistoryScrollHint('Loading history…');
+        historyRowsRaw = [];
+        historyFilteredRows = [];
+        historyVisibleRows = [];
+        historyRenderedCount = 0;
+        historyRowLookup.clear();
+        historyQuoteCache.clear();
 
         try {
             const resp = await fetch(`/api/history/summary?live_quotes=${historyLiveQuotesEnabled ? '1' : '0'}`);
             const result = await resp.json();
             if (!result.success) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="11" class="text-center text-muted py-3">Error loading history.</td>
-                    </tr>
-                `;
-                historyRowsRaw = [];
-                updateHistoryCount(0);
-                updateSortIndicators();
+                renderHistoryLoadError();
                 return;
             }
             historyRowsRaw = Array.isArray(result.data) ? result.data : [];
+            historyRowLookup.clear();
+            historyRowsRaw.forEach(row => {
+                if (!row) return;
+                const tickerKey = (row.ticker || '').toString().trim().toUpperCase();
+                if (!tickerKey) return;
+                row.ticker = tickerKey;
+                historyRowLookup.set(tickerKey, row);
+                row.current_price = null;
+                row.current_change_pct = null;
+            });
+            historyQuoteCache.clear();
             if (typeof result.meta?.live_quotes === 'boolean' && historyLiveQuotesToggle) {
                 historyLiveQuotesToggle.checked = result.meta.live_quotes;
                 historyLiveQuotesEnabled = result.meta.live_quotes;
             }
             applyHistoryFilters();
-            return;
         } catch (err) {
             console.error('History summary error', err);
-            const tbody2 = document.getElementById('history-table-body');
-            tbody2.innerHTML = `
+            renderHistoryLoadError();
+        }
+    }
+
+    function renderHistoryLoadError() {
+        if (historyTableBody) {
+            historyTableBody.innerHTML = `
                 <tr>
                     <td colspan="11" class="text-center text-muted py-3">Error loading history.</td>
                 </tr>
             `;
-            historyRowsRaw = [];
-            updateHistoryCount(0);
-            updateSortIndicators();
         }
+        updateHistoryScrollHint('Unable to load history.');
+        historyRowsRaw = [];
+        historyFilteredRows = [];
+        historyVisibleRows = [];
+        historyRenderedCount = 0;
+        historyExhausted = true;
+        historyLoadingMore = false;
+        updateHistoryCount(0);
+        updateSortIndicators();
     }
 
     function applyHistoryFilters() {
         if (!historyRowsRaw.length) {
+            historyFilteredRows = [];
+            historyVisibleRows = [];
+            historyRenderedCount = 0;
+            historyExhausted = true;
             renderHistoryTable([]);
             updateHistoryCount(0);
             updateSortIndicators();
+            updateHistoryScrollHint('No history yet.');
             return;
         }
 
@@ -1779,8 +1877,8 @@
         }
 
         rows = sortHistoryRows(rows);
-        renderHistoryTable(rows);
-        updateHistoryCount(rows.length);
+        historyFilteredRows = rows;
+        resetHistoryPagination();
         updateSortIndicators();
     }
 
@@ -1795,6 +1893,54 @@
         });
     }
 
+    function resetHistoryPagination() {
+        historyVisibleRows = [];
+        historyRenderedCount = 0;
+        historyExhausted = false;
+        renderNextHistoryChunk(true);
+    }
+
+    function renderNextHistoryChunk(force = false) {
+        if (historyLoadingMore) return;
+        if (!historyFilteredRows.length) {
+            renderHistoryTable([]);
+            updateHistoryCount(0);
+            updateHistoryScrollHint(historyRowsRaw.length ? 'Refine your filters.' : 'No history yet.');
+            historyExhausted = true;
+            return;
+        }
+        if (!force && historyExhausted) return;
+
+        if (!force && historyRenderedCount >= historyFilteredRows.length) {
+            historyExhausted = true;
+            updateHistoryScrollHint('Reached end of history.');
+            return;
+        }
+
+        historyLoadingMore = true;
+        const startIndex = force ? 0 : historyRenderedCount;
+        const chunk = historyFilteredRows.slice(startIndex, startIndex + HISTORY_PAGE_SIZE);
+        if (force) {
+            historyVisibleRows = [];
+            historyRenderedCount = 0;
+        }
+        if (!chunk.length) {
+            historyLoadingMore = false;
+            historyExhausted = true;
+            updateHistoryScrollHint('Reached end of history.');
+            return;
+        }
+
+        historyVisibleRows = historyVisibleRows.concat(chunk);
+        historyRenderedCount += chunk.length;
+        renderHistoryTable(historyVisibleRows);
+        updateHistoryCount(historyVisibleRows.length);
+        queueHistoryQuoteFetch(force, chunk);
+        historyLoadingMore = false;
+        historyExhausted = historyRenderedCount >= historyFilteredRows.length;
+        updateHistoryScrollHint(historyExhausted ? 'Reached end of history.' : 'Scroll to load more history.');
+    }
+
     function getSortValue(row, key) {
         switch (key) {
             case 'alerts':
@@ -1806,9 +1952,9 @@
             case 'last_ai_potential_gain_pct':
                 return getNumericValue(row.last_ai_potential_gain_pct);
             case 'current_price':
-                return getNumericValue(row.current_price);
+                return getNumericValue(row.current_price ?? row.last_scan_price);
             case 'current_change_pct':
-                return getNumericValue(row.current_change_pct);
+                return getNumericValue(row.current_change_pct ?? row.last_known_change_pct);
             case 'first_date':
                 return getDateValue(row.first_date);
             case 'last_date':
@@ -1834,6 +1980,20 @@
         if (!val) return 0;
         const stamp = Date.parse(val);
         return Number.isNaN(stamp) ? 0 : stamp;
+    }
+
+    function coerceNumber(val) {
+        if (val === null || val === undefined) return null;
+        if (typeof val === 'number') {
+            return Number.isFinite(val) ? val : null;
+        }
+        const parsed = parseFloat(val);
+        return Number.isNaN(parsed) ? null : parsed;
+    }
+
+    function updateHistoryScrollHint(message) {
+        if (!historyScrollSentinel) return;
+        historyScrollSentinel.textContent = message;
     }
 
     function normalizeProfileValue(val) {
@@ -2071,33 +2231,39 @@
         historyAnalysisCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     function renderHistoryTable(rows) {
-        const tbody = document.getElementById('history-table-body');
+        if (!historyTableBody) return;
         if (!rows.length) {
             activeHistoryTicker = '';
             const message = historyRowsRaw.length
                 ? 'No matches for the current filters.'
                 : 'No alerts recorded yet. Run the scanner to build history.';
-            tbody.innerHTML = `
+            historyTableBody.innerHTML = `
                 <tr>
                     <td colspan="11" class="text-center text-muted py-3">
                         ${message}
                     </td>
                 </tr>
             `;
+            updateHistoryScrollHint(historyRowsRaw.length ? 'Refine your filters.' : 'No history yet.');
             return;
         }
 
-        tbody.innerHTML = '';
+        historyTableBody.innerHTML = '';
         rows.forEach(r => {
             const ticker = r.ticker || '';
             const alerts = r.alerts || 0;
             const lastProfile = r.last_profile || '';
             const lastTier = r.last_tier || '';
-            const lastEntry = (typeof r.last_entry === 'number') ? r.last_entry.toFixed(2) : (r.last_entry || '-');
+            const lastEntryNum = coerceNumber(r.last_entry);
+            const lastEntry = lastEntryNum === null ? '-' : lastEntryNum.toFixed(2);
             const aiTargetVal = r.last_ai_target_price;
             const aiGainVal = r.last_ai_potential_gain_pct;
-            const currentPrice = (typeof r.current_price === 'number') ? r.current_price.toFixed(2) : (r.current_price || '-');
-            const pct = (typeof r.current_change_pct === 'number') ? r.current_change_pct.toFixed(2) + '%' : '-';
+            const currentPriceVal = coerceNumber(r.current_price);
+            const fallbackPriceVal = coerceNumber(r.last_scan_price);
+            const priceForDisplay = currentPriceVal ?? fallbackPriceVal;
+            const pctVal = coerceNumber(r.current_change_pct);
+            const fallbackPctVal = coerceNumber(r.last_known_change_pct);
+            const pctForDisplay = pctVal ?? fallbackPctVal;
             const aiTarget = (typeof aiTargetVal === 'number')
                 ? aiTargetVal.toFixed(2)
                 : (aiTargetVal || '-');
@@ -2106,6 +2272,13 @@
                 : (typeof aiGainVal === 'string' && aiGainVal.trim().length ? aiGainVal : '-');
             const firstDate = r.first_date || '';
             const lastDate = r.last_date || '';
+
+            const priceCell = priceForDisplay === null
+                ? '-'
+                : '$' + priceForDisplay.toFixed(2);
+            const pctCell = pctForDisplay === null
+                ? '-'
+                : `${pctForDisplay >= 0 ? '+' : ''}${pctForDisplay.toFixed(2)}%`;
 
             const tr = document.createElement('tr');
             tr.classList.add('history-table-row');
@@ -2118,8 +2291,8 @@
                 <td>${lastEntry === '-' ? '-' : '$' + lastEntry}</td>
                 <td>${aiTarget === '-' ? '-' : '$' + aiTarget}</td>
                 <td>${aiGain}</td>
-                <td>${currentPrice === '-' ? '-' : '$' + currentPrice}</td>
-                <td>${pct}</td>
+                <td>${priceCell}</td>
+                <td>${pctCell}</td>
                 <td>${firstDate}</td>
                 <td>${lastDate}</td>
             `;
@@ -2129,19 +2302,106 @@
             if (activeHistoryTicker && ticker === activeHistoryTicker) {
                 tr.classList.add('active');
             }
-            tbody.appendChild(tr);
+            historyTableBody.appendChild(tr);
         });
         highlightHistoryRow(activeHistoryTicker);
     }
 
+    function clearHistoryQuoteState() {
+        historyQuoteCache.clear();
+        historyRowsRaw.forEach(row => {
+            row.current_price = null;
+            row.current_change_pct = null;
+        });
+    }
+
+    function queueHistoryQuoteFetch(force = false, preferredRows = null) {
+        if (!historyLiveQuotesEnabled || !historyVisibleRows.length || historyQuoteInflight) return;
+
+        const now = Date.now();
+        const tickers = [];
+        const seen = new Set();
+        const primary = Array.isArray(preferredRows) && preferredRows.length ? preferredRows : historyVisibleRows;
+        const secondary = primary === historyVisibleRows ? [] : historyVisibleRows;
+
+        const collectTickers = (rows) => {
+            rows.forEach(row => {
+                const ticker = row.ticker;
+                if (!ticker || seen.has(ticker)) return;
+                const cached = historyQuoteCache.get(ticker);
+                if (!force && cached && now - cached.fetchedAt < HISTORY_QUOTE_TTL_MS) {
+                    return;
+                }
+                seen.add(ticker);
+                tickers.push(ticker);
+            });
+        };
+
+        collectTickers(primary);
+        if (tickers.length < HISTORY_MAX_QUOTE_BATCH && secondary.length) {
+            collectTickers(secondary);
+        }
+
+        if (!tickers.length) return;
+        fetchHistoryQuotes(tickers.slice(0, HISTORY_MAX_QUOTE_BATCH));
+    }
+
+    async function fetchHistoryQuotes(tickers) {
+        if (!tickers.length) return;
+        historyQuoteInflight = true;
+        try {
+            const resp = await fetch('/api/history/live-quotes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tickers })
+            });
+            const result = await resp.json();
+            if (!result.success) return;
+
+            const now = Date.now();
+            for (const item of (result.data || [])) {
+                const ticker = (item.ticker || '').toString().trim().toUpperCase();
+                if (!ticker) continue;
+                const priceVal = coerceNumber(item.current_price);
+                historyQuoteCache.set(ticker, { price: priceVal, fetchedAt: now });
+                const row = historyRowLookup.get(ticker);
+                if (!row) continue;
+                row.current_price = priceVal;
+                const entryVal = coerceNumber(row.last_entry);
+                if (priceVal !== null && entryVal) {
+                    const pct = ((priceVal - entryVal) / entryVal) * 100;
+                    row.current_change_pct = Number(pct.toFixed(2));
+                } else {
+                    row.current_change_pct = null;
+                }
+            }
+            renderHistoryTable(historyVisibleRows);
+        } catch (err) {
+            console.error('History live quotes error', err);
+        } finally {
+            historyQuoteInflight = false;
+        }
+    }
+
+    function setupHistoryScrollObserver() {
+        if (!historyScrollSentinel || !('IntersectionObserver' in window)) return;
+        const observer = new IntersectionObserver(entries => {
+            if (!entries.some(entry => entry.isIntersecting)) return;
+            if (historyLoadingMore || historyExhausted || !historyFilteredRows.length) return;
+            renderNextHistoryChunk();
+        }, { root: null, threshold: 0.1 });
+        observer.observe(historyScrollSentinel);
+    }
+
     function updateHistoryCount(visibleCount) {
         if (!historyResultsCount) return;
-        const total = historyRowsRaw.length;
+        const total = historyFilteredRows.length || historyRowsRaw.length;
         if (!total) {
             historyResultsCount.textContent = 'No history yet';
             return;
         }
-        historyResultsCount.textContent = `Showing ${visibleCount} / ${total}`;
+        const safeVisible = Math.min(visibleCount, total);
+        historyResultsCount.textContent = `Showing ${safeVisible} / ${total}`;
     }
 
     function updateSortIndicators() {
@@ -2165,6 +2425,8 @@
         applyHistoryFilters();
     }
 
+    setupHistoryScrollObserver();
+
     historySearchInput?.addEventListener('input', (event) => {
         historyFilters.search = event.target.value.trim().toLowerCase();
         applyHistoryFilters();
@@ -2182,7 +2444,12 @@
 
     historyLiveQuotesToggle?.addEventListener('change', () => {
         historyLiveQuotesEnabled = historyLiveQuotesToggle.checked;
-        fetchHistorySummary();
+        if (!historyLiveQuotesEnabled) {
+            clearHistoryQuoteState();
+            renderHistoryTable(historyVisibleRows);
+            return;
+        }
+        queueHistoryQuoteFetch(true);
     });
 
     historyResetFiltersBtn?.addEventListener('click', () => {
@@ -2203,9 +2470,12 @@
         });
     });
 
-    historyTab.addEventListener('shown.bs.tab', () => {
+    historyTab?.addEventListener('shown.bs.tab', () => {
         fetchHistorySummary();
     });
+    if (historyTab?.classList.contains('active')) {
+        fetchHistorySummary();
+    }
 
     // No auto load for scanner/news; you trigger them manually with buttons.
 </script>

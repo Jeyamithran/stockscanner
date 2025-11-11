@@ -25,6 +25,7 @@ logging.basicConfig(level=logging.INFO)
 load_dotenv()
 
 app = Flask(__name__)
+application = app
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change_me_locally_only")
 
 # --- AUTHENTICATION ---
@@ -292,7 +293,8 @@ def fetch_all_alert_rows(limit: int = None) -> List[Dict[str, Any]]:
                 target,
                 ai_target_price,
                 potential_gain_pct,
-                ai_potential_gain_pct
+                ai_potential_gain_pct,
+                scan_price
             FROM alert_history
             ORDER BY timestamp_iso DESC
         """
@@ -318,7 +320,8 @@ def fetch_all_alert_rows(limit: int = None) -> List[Dict[str, Any]]:
             "target": r.get("target"),
             "ai_target_price": r.get("ai_target_price"),
             "potential_gain_pct": r.get("potential_gain_pct"),
-            "ai_potential_gain_pct": r.get("ai_potential_gain_pct")
+            "ai_potential_gain_pct": r.get("ai_potential_gain_pct"),
+            "scan_price": r.get("scan_price")
         }
         for r in ALERT_HISTORY_CACHE
     ]
@@ -1028,11 +1031,12 @@ def record_alert_history(profile: str, data: Dict[str, Any]) -> None:
             if not ticker:
                 continue
 
-            entry = _safe_float(alert.get("EntryPrice"))
+            ai_entry = _safe_float(alert.get("AIEntryPrice") or alert.get("EntryPrice"))
             target = _safe_float(alert.get("TargetPrice"))
             ai_target = _safe_float(alert.get("AITargetPrice") or alert.get("TargetPrice"))
             stop = _safe_float(alert.get("StopPrice"))
             rt_price = _safe_float(alert.get("RealTimePrice"))
+            entry = ai_entry
             pot_gain = _safe_float(alert.get("PotentialGainPercent"))
             ai_pot_gain = _safe_float(alert.get("AIPotentialGainPercent"))
 
@@ -1116,11 +1120,19 @@ def api_history_summary():
     Aggregate history by ticker for the History tab.
     Returns per-ticker stats and current performance from last entry.
     """
-    include_live_quotes = (request.args.get("live_quotes") or "").lower() in ("1", "true", "yes", "on")
+    live_quotes_raw = (request.args.get("live_quotes") or "").strip().lower()
+    if live_quotes_raw == "":
+        live_quotes_enabled = True
+    else:
+        live_quotes_enabled = live_quotes_raw not in {"0", "false", "off", "no"}
 
     alert_rows = fetch_all_alert_rows(limit=2000)
     if not alert_rows:
-        return jsonify({"success": True, "data": [], "meta": {"live_quotes": include_live_quotes}})
+        return jsonify({
+            "success": True,
+            "data": [],
+            "meta": {"live_quotes": live_quotes_enabled}
+        })
 
     agg: Dict[str, Dict[str, Any]] = {}
 
@@ -1145,7 +1157,8 @@ def api_history_summary():
                 "last_tier": r.get("tier"),
                 "last_entry": entry,
                 "last_ai_target_price": r.get("ai_target_price"),
-                "last_ai_potential_gain_pct": r.get("ai_potential_gain_pct")
+                "last_ai_potential_gain_pct": r.get("ai_potential_gain_pct"),
+                "last_scan_price": r.get("scan_price")
             }
 
         a = agg[ticker]
@@ -1164,41 +1177,99 @@ def api_history_summary():
             a["last_entry"] = entry
             a["last_ai_target_price"] = r.get("ai_target_price")
             a["last_ai_potential_gain_pct"] = r.get("ai_potential_gain_pct")
+            a["last_scan_price"] = r.get("scan_price")
 
-    # Optionally fetch current prices (slow + rate-limited)
-    if include_live_quotes and FINNHUB_API_KEY:
-        for ticker, a in agg.items():
-            cp = get_finnhub_quote(ticker)
-            entry = a.get("last_entry")
-            if cp is not None and entry:
-                pct = (cp - entry) / entry * 100.0
-                a["current_price"] = round(cp, 2)
-                a["current_change_pct"] = round(pct, 2)
-            else:
-                a["current_price"] = None
-                a["current_change_pct"] = None
+    # Fetch current prices and compute performance from last entry
+    for ticker, a in agg.items():
+        entry = _safe_float(a.get("last_entry"))
+        scan_price = _safe_float(a.get("last_scan_price"))
+        if scan_price is not None and entry not in (None, 0):
+            pct = (scan_price - entry) / entry * 100.0
+            a["last_known_change_pct"] = round(pct, 2)
+        else:
+            a["last_known_change_pct"] = None
 
-            if "last_profile_key" in a:
-                a["last_profile"] = format_profile_label(a.get("last_profile_key"))
+        a["current_price"] = None
+        a["current_change_pct"] = None
 
-            # clean internal timestamps
-            del a["first_timestamp"]
-            del a["last_timestamp"]
-    else:
-        for _, a in agg.items():
-            a["current_price"] = None
-            a["current_change_pct"] = None
-            if "last_profile_key" in a:
-                a["last_profile"] = format_profile_label(a.get("last_profile_key"))
-            del a["first_timestamp"]
-            del a["last_timestamp"]
+        if "last_profile_key" in a:
+            a["last_profile"] = format_profile_label(a.get("last_profile_key"))
+
+        # clean internal timestamps
+        del a["first_timestamp"]
+        del a["last_timestamp"]
+        # last_scan_price should only be exposed when useful
+        if a.get("last_scan_price") is None:
+            a.pop("last_scan_price", None)
 
     items = list(agg.values())
     # Sort: best performers (highest % from last entry) first,
     # those with no current_change_pct go to bottom.
-    items.sort(key=lambda x: (x["current_change_pct"] is None, -(x["current_change_pct"] or 0.0)))
+    def _summary_sort_key(row: Dict[str, Any]):
+        val = row.get("current_change_pct")
+        if val is None:
+            val = row.get("last_known_change_pct")
+        if val is None:
+            return (True, 0.0)
+        return (False, -val)
 
-    return jsonify({"success": True, "data": items, "meta": {"live_quotes": include_live_quotes}})
+    items.sort(key=_summary_sort_key)
+
+    return jsonify({
+        "success": True,
+        "data": items,
+        "meta": {"live_quotes": live_quotes_enabled}
+    })
+
+
+@app.route("/api/history/live-quotes", methods=["POST"])
+@auth.login_required
+def api_history_live_quotes():
+    """
+    Fetch live quotes for a limited batch of tickers.
+    This endpoint is used by the History tab to avoid blasting Finnhub
+    with requests for every recorded ticker at once.
+    """
+    if not FINNHUB_API_KEY:
+        return jsonify({"success": False, "error": "Finnhub API key not configured."}), 503
+
+    try:
+        payload = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify({"success": False, "error": "Invalid JSON body."}), 400
+
+    tickers = payload.get("tickers") or []
+    if not isinstance(tickers, list):
+        return jsonify({"success": False, "error": "tickers must be a list."}), 400
+
+    normalized: List[str] = []
+    for t in tickers:
+        ticker = (t or "").strip().upper()
+        if ticker and ticker not in normalized:
+            normalized.append(ticker)
+
+    max_batch = int(os.environ.get("HISTORY_LIVE_QUOTE_BATCH", "20"))
+    trimmed = normalized[:max_batch]
+    if not trimmed:
+        return jsonify({"success": True, "data": []})
+
+    results = []
+    for symbol in trimmed:
+        price = get_finnhub_quote(symbol)
+        if price is None:
+            results.append({
+                "ticker": symbol,
+                "current_price": None,
+                "fetched_at": datetime.utcnow().isoformat() + "Z"
+            })
+        else:
+            results.append({
+                "ticker": symbol,
+                "current_price": round(price, 4),
+                "fetched_at": datetime.utcnow().isoformat() + "Z"
+            })
+
+    return jsonify({"success": True, "data": results})
 
 
 @app.route("/api/history/deep-dive", methods=["POST"])
