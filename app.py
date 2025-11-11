@@ -57,6 +57,12 @@ else:
         api_key=PERPLEXITY_API_KEY,
         base_url="https://api.perplexity.ai"
     )
+DEFAULT_PPLX_MODEL = os.environ.get("PPLX_DEFAULT_MODEL", "sonar-reasoning-pro")
+PPLX_MODEL_ALIASES = {
+    "reasoning": "sonar-reasoning-pro",
+    "pro": "sonar-pro",
+    "classic": "sonar-pro"
+}
 
 # --- External API keys ---
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
@@ -64,11 +70,13 @@ BENZINGA_API_KEY = os.environ.get("BENZINGA_API_KEY")
 PRICE_ENRICH_TIMEOUT = float(os.environ.get("SCANNER_PRICE_ENRICH_TIMEOUT", "18"))
 FINNHUB_CACHE_TTL = float(os.environ.get("FINNHUB_CACHE_TTL_SECONDS", "45"))
 FINNHUB_RATE_LIMIT_SECONDS = float(os.environ.get("FINNHUB_RATE_LIMIT_SECONDS", "0.25"))
+SCANNER_ALLOW_FALLBACK = os.environ.get("SCANNER_ALLOW_FALLBACK", "false").strip().lower() == "true"
 
 PROFILE_LABELS = {
     "hedge_fund": "Hedge Fund PM",
     "pro_trader": "Pro Momentum",
-    "catalyst": "News / SEC"
+    "catalyst": "News / SEC",
+    "bio_analyst": "Biotech Catalyst"
 }
 
 
@@ -76,6 +84,18 @@ def format_profile_label(profile_key: str) -> str:
     if not profile_key:
         return ""
     return PROFILE_LABELS.get(profile_key, profile_key.replace("_", " ").title())
+
+
+def resolve_pplx_model(requested: str) -> str:
+    if not requested:
+        return DEFAULT_PPLX_MODEL
+    key = requested.strip().lower()
+    if key in PPLX_MODEL_ALIASES:
+        return PPLX_MODEL_ALIASES[key]
+    # Allow passing exact model id
+    if key in ("sonar-pro", "sonar-reasoning-pro"):
+        return key
+    return DEFAULT_PPLX_MODEL
 
 os.makedirs(app.instance_path, exist_ok=True)
 ALERT_HISTORY_DB = os.environ.get(
@@ -553,6 +573,52 @@ Filters:
 - Flag contrarian setups where short interest ≥ 15% float but price breaks cleanly on catalyst.
 
 OUTPUT: Exactly the ScannerResponse schema. JSON only.
+""" + SCANNER_RESPONSE_SCHEMA
+
+# 4) Biotech Catalyst Analyst
+BIO_TECH_ANALYST_PROMPT = """
+SYSTEM
+You are a quantitative biotech hedge fund analyst hunting pre-catalyst breakouts in US-listed biotech equities.
+
+Scope:
+- Exchanges: NASDAQ & NYSE, biotech/biopharma focus (GICS 35201010 / SIC 2836 equivalents).
+- Market capitalization: $250M – $5B (small-to-mid cap sweet spot).
+- Liquidity: 30-day average volume > 100k shares AND LiquidityUSD ≥ $2M when data allows.
+
+Step 1 — Universe:
+- Only include tickers clearing the scope above; ignore mega-cap pharma.
+
+Step 2 — Clinical catalysts (MANDATORY):
+- Must surface companies with active Phase 2b (randomized) or Phase 3 trials.
+- Trials must be in Recruiting or Active, not recruiting.
+- Estimated primary completion or study completion within the next 1–4 fiscal quarters.
+- Prioritize indications: Oncology (NSCLC, Glioblastoma), Neurology (Alzheimer's, Parkinson's), Metabolic (NASH, T2D), Autoimmune.
+- Primary endpoints should be efficacy-driven (OS, PFS, or statistically powered surrogate).
+- Reference the ClinicalTrials.gov identifier inside DecisionFactors.
+
+Step 3 — Regulatory / sentiment overlays (at least one per idea):
+- Company holds Breakthrough, Fast Track, Orphan, or Priority Review designation.
+- Recent (≤90 days) press release, 8-K, or analyst report citing:
+  * positive interim analysis,
+  * Data Monitoring Committee recommendation,
+  * end-of-Phase 2 meeting outcome,
+  * pre-BLA/NDA engagement,
+  * submission acceptance or priority review clock.
+- Analyst sentiment from tier-1 banks (Jefferies, Goldman, SVB, etc.) upgraded/affirmed Buy or Outperform with higher target in last 90 days.
+
+Step 4 — Fundamental & technical hygiene:
+- Cash plus equivalents ≥ 12 months of burn (flag in DetailedAnalysis if tight).
+- Short interest < 15% float unless justified (note rationale).
+- Prefer base/consolidation structures with constructive volume and accumulation footprints indicating positioning ahead of data.
+
+Scoring / Output expectations:
+- Rank 3–5 strongest tickers per bucket (Small/Mid/Large). If LargeCap lacks qualifying names, leave empty rather than diluting quality.
+- Provide RiskReward ≥ 2.5:1 when possible; explain if otherwise.
+- PrimaryCatalyst must clearly describe the upcoming trial/regulatory milestone AND timeline window (e.g., “Phase 3 glioblastoma OS readout expected Q3 FY25”).
+- CatalystType should be “FDA”, “Clinical Trial”, or “Guidance/Analyst” as appropriate (never “None”).
+- DecisionFactors must connect clinical timing, regulatory designations, liquidity runway, and technical posture.
+
+OUTPUT: ONE JSON object matching the ScannerResponse schema exactly. No prose.
 """ + SCANNER_RESPONSE_SCHEMA
 
 # News AI system prompt (emphasize decision factors)
@@ -1050,9 +1116,11 @@ def api_history_summary():
     Aggregate history by ticker for the History tab.
     Returns per-ticker stats and current performance from last entry.
     """
+    include_live_quotes = (request.args.get("live_quotes") or "").lower() in ("1", "true", "yes", "on")
+
     alert_rows = fetch_all_alert_rows(limit=2000)
     if not alert_rows:
-        return jsonify({"success": True, "data": []})
+        return jsonify({"success": True, "data": [], "meta": {"live_quotes": include_live_quotes}})
 
     agg: Dict[str, Dict[str, Any]] = {}
 
@@ -1097,31 +1165,40 @@ def api_history_summary():
             a["last_ai_target_price"] = r.get("ai_target_price")
             a["last_ai_potential_gain_pct"] = r.get("ai_potential_gain_pct")
 
-    # Fetch current prices and compute performance from last entry
-    for ticker, a in agg.items():
-        cp = get_finnhub_quote(ticker)
-        entry = a.get("last_entry")
-        if cp is not None and entry:
-            pct = (cp - entry) / entry * 100.0
-            a["current_price"] = round(cp, 2)
-            a["current_change_pct"] = round(pct, 2)
-        else:
+    # Optionally fetch current prices (slow + rate-limited)
+    if include_live_quotes and FINNHUB_API_KEY:
+        for ticker, a in agg.items():
+            cp = get_finnhub_quote(ticker)
+            entry = a.get("last_entry")
+            if cp is not None and entry:
+                pct = (cp - entry) / entry * 100.0
+                a["current_price"] = round(cp, 2)
+                a["current_change_pct"] = round(pct, 2)
+            else:
+                a["current_price"] = None
+                a["current_change_pct"] = None
+
+            if "last_profile_key" in a:
+                a["last_profile"] = format_profile_label(a.get("last_profile_key"))
+
+            # clean internal timestamps
+            del a["first_timestamp"]
+            del a["last_timestamp"]
+    else:
+        for _, a in agg.items():
             a["current_price"] = None
             a["current_change_pct"] = None
-
-        if "last_profile_key" in a:
-            a["last_profile"] = format_profile_label(a.get("last_profile_key"))
-
-        # clean internal timestamps
-        del a["first_timestamp"]
-        del a["last_timestamp"]
+            if "last_profile_key" in a:
+                a["last_profile"] = format_profile_label(a.get("last_profile_key"))
+            del a["first_timestamp"]
+            del a["last_timestamp"]
 
     items = list(agg.values())
     # Sort: best performers (highest % from last entry) first,
     # those with no current_change_pct go to bottom.
     items.sort(key=lambda x: (x["current_change_pct"] is None, -(x["current_change_pct"] or 0.0)))
 
-    return jsonify({"success": True, "data": items})
+    return jsonify({"success": True, "data": items, "meta": {"live_quotes": include_live_quotes}})
 
 
 @app.route("/api/history/deep-dive", methods=["POST"])
@@ -1167,7 +1244,7 @@ def api_history_deep_dive():
 
     try:
         resp = pplx_client.chat.completions.create(
-            model="sonar-pro",
+            model="sonar-reasoning-pro",
             messages=[
                 {"role": "system", "content": HISTORY_DEEP_DIVE_PROMPT},
                 {"role": "user", "content": user_prompt},
@@ -1267,7 +1344,7 @@ def api_news_analysis():
 
     try:
         resp = pplx_client.chat.completions.create(
-            model="sonar-pro",
+            model="sonar-reasoning-pro",
             messages=[
                 {"role": "system", "content": NEWS_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
@@ -1387,10 +1464,16 @@ def build_fallback_prompt(profile: str) -> str:
     )
 
 
-def call_perplexity(system_prompt: str, user_prompt: str, extra_user_prompt: str = "") -> Dict[str, Any]:
+def call_perplexity(
+    system_prompt: str,
+    user_prompt: str,
+    extra_user_prompt: str = "",
+    model_name: str = None
+) -> Dict[str, Any]:
     raw_json_string = ""
     retries = 2
     retry_extra = extra_user_prompt or ""
+    effective_model = model_name or DEFAULT_PPLX_MODEL
 
     for attempt in range(retries):
         try:
@@ -1402,7 +1485,7 @@ def call_perplexity(system_prompt: str, user_prompt: str, extra_user_prompt: str
             messages.append({"role": "user", "content": user_content})
 
             response = pplx_client.chat.completions.create(
-                model="sonar-pro",
+                model=effective_model,
                 messages=messages,
                 extra_body={"search_recency_filter": "day"}
             )
@@ -1450,31 +1533,48 @@ def run_scanner_api():
     try:
         payload = request.get_json(silent=True) or {}
         profile = (payload.get("profile") or "hedge_fund").lower()
+        requested_model = payload.get("model_variant") or payload.get("model")
+        selected_model = resolve_pplx_model(requested_model or "")
+        user_allow_fallback = bool(payload.get("allow_fallback"))
 
         if profile == "pro_trader":
             system_prompt = PRO_TRADER_PROMPT
         elif profile == "catalyst":
             system_prompt = CATALYST_HUNTER_PROMPT
+        elif profile == "bio_analyst":
+            system_prompt = BIO_TECH_ANALYST_PROMPT
         else:
             system_prompt = HEDGE_FUND_PROMPT
             profile = "hedge_fund"
 
-        logging.info(f"Sending request to Perplexity API for scanner profile: {profile}")
-        primary = call_perplexity(system_prompt, build_user_prompt(profile))
+        fallback_allowed = (SCANNER_ALLOW_FALLBACK or user_allow_fallback) and profile != "hedge_fund"
+
+        logging.info("Sending request to Perplexity API for scanner profile: %s model=%s", profile, selected_model)
+        primary = call_perplexity(
+            system_prompt,
+            build_user_prompt(profile),
+            model_name=selected_model
+        )
 
         fallback_used = False
+        fallback_suppressed = False
         if profile != "hedge_fund" and should_trigger_fallback(profile, primary):
-            logging.info(f"Primary scan sparse for profile {profile}; attempting fallback.")
-            try:
-                fallback = call_perplexity(
-                    system_prompt,
-                    build_user_prompt(profile),
-                    build_fallback_prompt(profile)
-                )
-                primary = merge_scanner_data(primary, fallback)
-                fallback_used = True
-            except Exception as exc:
-                logging.error(f"Fallback scan failed for {profile}: {exc}")
+            if fallback_allowed:
+                logging.info("Primary scan sparse for %s; attempting fallback with model %s.", profile, selected_model)
+                try:
+                    fallback = call_perplexity(
+                        system_prompt,
+                        build_user_prompt(profile),
+                        build_fallback_prompt(profile),
+                        model_name=selected_model
+                    )
+                    primary = merge_scanner_data(primary, fallback)
+                    fallback_used = True
+                except Exception as exc:
+                    logging.error(f"Fallback scan failed for {profile}: {exc}")
+            else:
+                fallback_suppressed = True
+                logging.info("Fallback suppressed for profile %s (manual toggle off).", profile)
 
         data = dedupe_alerts(primary)
         if fallback_used:
@@ -1492,13 +1592,18 @@ def run_scanner_api():
         except Exception as e:
             logging.error(f"Failed to record alert history: {e}")
 
-        meta = {}
+        meta = {
+            "model": selected_model,
+            "fallback_allowed": fallback_allowed,
+            "fallback_used": fallback_used,
+            "fallback_suppressed": fallback_suppressed
+        }
         if fallback_used:
             meta["notes"] = "Relaxed criteria to round out this scan."
+        elif fallback_suppressed:
+            meta["notes"] = "Fallback disabled. Enable it if you need more names."
 
-        response_payload = {"success": True, "data": data}
-        if meta:
-            response_payload["meta"] = meta
+        response_payload = {"success": True, "data": data, "meta": meta}
 
         return jsonify(response_payload)
 

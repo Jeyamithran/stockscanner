@@ -116,6 +116,11 @@
             border: 1px solid rgba(245, 158, 11, 0.7);
         }
 
+        .pill-bio {
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.7);
+        }
+
         .scanner-tier-header {
             border-radius: 0.9rem 0.9rem 0 0;
         }
@@ -483,6 +488,13 @@
                     Run Scanner
                 </button>
                 <p id="lastUpdated" class="text-muted small mb-0 mt-1">Last scan: never</p>
+                <p id="modelStatus" class="text-muted small mb-0">Model: Reasoning (Deep Search)</p>
+                <div class="form-check form-switch small text-start mt-2">
+                    <input class="form-check-input" type="checkbox" id="fallbackToggle">
+                    <label class="form-check-label" for="fallbackToggle">
+                        Allow fallback (extra AI call)
+                    </label>
+                </div>
                 <div id="scannerError" class="alert alert-danger small py-1 px-2 mt-2 mb-0 d-none text-start">
                 </div>
             </div>
@@ -529,6 +541,20 @@
                                 </button>
                                 <button class="btn btn-outline-light" data-profile="catalyst" id="btnProfileCat">
                                     <span class="pill pill-cat">News / SEC</span>
+                                </button>
+                                <button class="btn btn-outline-light" data-profile="bio_analyst" id="btnProfileBio">
+                                    <span class="pill pill-bio">Biotech</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            <span class="text-muted small me-1">Model:</span>
+                            <div class="btn-group btn-group-sm" role="group" aria-label="Model selector">
+                                <button class="btn btn-outline-light active" data-model="reasoning" id="btnModelReasoning">
+                                    Reasoning
+                                </button>
+                                <button class="btn btn-outline-light" data-model="pro" id="btnModelPro">
+                                    Classic
                                 </button>
                             </div>
                         </div>
@@ -761,6 +787,12 @@
                         <button class="btn btn-sm btn-outline-light ms-auto" id="historyResetFilters">
                             Reset
                         </button>
+                        <div class="form-check form-switch ms-3 text-nowrap">
+                            <input class="form-check-input" type="checkbox" id="historyLiveQuotes">
+                            <label class="form-check-label small" for="historyLiveQuotes">
+                                Live quotes
+                            </label>
+                        </div>
                         <small class="text-muted history-results-count" id="historyResultsCount">
                             Showing 0 / 0
                         </small>
@@ -853,15 +885,23 @@
     const MARKET_CAPS = ['SmallCap', 'MidCap', 'LargeCap'];
     let allScanData = { SmallCap: [], MidCap: [], LargeCap: [] };
     let currentProfile = 'hedge_fund';
+    let currentModel = 'reasoning';
     const PROFILE_LABELS = {
         hedge_fund: 'Hedge Fund PM',
         pro_trader: 'Pro Momentum',
-        catalyst: 'News / SEC'
+        catalyst: 'News / SEC',
+        bio_analyst: 'Biotech Catalyst'
+    };
+    const MODEL_LABELS = {
+        reasoning: 'Reasoning (Deep Search)',
+        pro: 'Classic (Fast)'
     };
 
     const runScanBtn = document.getElementById('runScanBtn');
     const lastUpdated = document.getElementById('lastUpdated');
     const scannerError = document.getElementById('scannerError');
+    const modelStatus = document.getElementById('modelStatus');
+    const fallbackToggle = document.getElementById('fallbackToggle');
 
     function clearScannerError() {
         if (!scannerError) return;
@@ -883,18 +923,38 @@
     const btnProfileHedge = document.getElementById('btnProfileHedge');
     const btnProfilePro = document.getElementById('btnProfilePro');
     const btnProfileCat = document.getElementById('btnProfileCat');
+    const btnProfileBio = document.getElementById('btnProfileBio');
+    const btnModelReasoning = document.getElementById('btnModelReasoning');
+    const btnModelPro = document.getElementById('btnModelPro');
 
     function setProfile(profile) {
         currentProfile = profile;
-        [btnProfileHedge, btnProfilePro, btnProfileCat].forEach(btn => btn.classList.remove('active'));
+        [btnProfileHedge, btnProfilePro, btnProfileCat, btnProfileBio].forEach(btn => btn.classList.remove('active'));
         if (profile === 'hedge_fund') btnProfileHedge.classList.add('active');
         if (profile === 'pro_trader') btnProfilePro.classList.add('active');
         if (profile === 'catalyst') btnProfileCat.classList.add('active');
+        if (profile === 'bio_analyst') btnProfileBio.classList.add('active');
     }
 
     btnProfileHedge.addEventListener('click', () => setProfile('hedge_fund'));
     btnProfilePro.addEventListener('click', () => setProfile('pro_trader'));
     btnProfileCat.addEventListener('click', () => setProfile('catalyst'));
+    btnProfileBio.addEventListener('click', () => setProfile('bio_analyst'));
+
+    function setModel(model) {
+        currentModel = model;
+        [btnModelReasoning, btnModelPro].forEach(btn => btn.classList.remove('active'));
+        if (model === 'reasoning') btnModelReasoning.classList.add('active');
+        if (model === 'pro') btnModelPro.classList.add('active');
+        if (modelStatus) {
+            const label = MODEL_LABELS[model] || model;
+            modelStatus.textContent = `Model: ${label}`;
+        }
+    }
+
+    btnModelReasoning.addEventListener('click', () => setModel('reasoning'));
+    btnModelPro.addEventListener('click', () => setModel('pro'));
+    setModel(currentModel);
 
     async function fetchScan() {
         runScanBtn.disabled = true;
@@ -905,7 +965,11 @@
             const resp = await fetch('/api/scan', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ profile: currentProfile })
+                body: JSON.stringify({
+                    profile: currentProfile,
+                    model_variant: currentModel,
+                    allow_fallback: Boolean(fallbackToggle?.checked)
+                })
             });
 
             const raw = await resp.text();
@@ -933,13 +997,34 @@
 
             allScanData = result.data || { SmallCap: [], MidCap: [], LargeCap: [] };
             renderScannerTables();
-            lastUpdated.textContent = 'Last scan: ' + new Date().toLocaleTimeString();
-
-            if (result.meta?.notes) {
-                const info = document.getElementById('scanner-info');
-                if (info) {
-                    info.textContent = result.meta.notes;
+            const meta = result.meta || {};
+            if (lastUpdated) {
+                lastUpdated.textContent = 'Last scan: ' + new Date().toLocaleTimeString();
+            }
+            if (meta.model) {
+                setModel(meta.model === 'sonar-pro' ? 'pro' : 'reasoning');
+            }
+            const info = document.getElementById('scanner-info');
+            if (info) {
+                const lines = [];
+                if (meta.model) {
+                    lines.push(`Model in use: ${meta.model}`);
+                }
+                if (typeof meta.fallback_allowed === 'boolean') {
+                    lines.push(`Fallback: ${meta.fallback_allowed ? 'enabled' : 'disabled'}`);
+                }
+                if (meta.fallback_used) {
+                    lines.push('Fallback scan ran to add more names.');
+                }
+                if (meta.notes) {
+                    lines.push(meta.notes);
+                }
+                if (lines.length) {
+                    info.textContent = lines.join(' • ');
                     info.classList.remove('d-none');
+                } else {
+                    info.textContent = '';
+                    info.classList.add('d-none');
                 }
             }
         } catch (err) {
@@ -1612,11 +1697,13 @@
     const historySortableHeaders = document.querySelectorAll('[data-history-sort]');
     const historyAnalysisBody = document.getElementById('history-analysis-body');
     const historyAnalysisCard = document.getElementById('history-analysis-card');
+    const historyLiveQuotesToggle = document.getElementById('historyLiveQuotes');
     let historyRowsRaw = [];
     const historyFilters = { search: '', profile: '', tier: '' };
     const historySort = { key: 'current_change_pct', direction: 'desc' };
     const historyAscDefaultSortKeys = new Set(['ticker', 'last_profile', 'last_tier', 'first_date', 'last_date']);
     let activeHistoryTicker = '';
+    let historyLiveQuotesEnabled = false;
 
     async function fetchHistorySummary() {
         const tbody = document.getElementById('history-table-body');
@@ -1627,7 +1714,7 @@
         `;
 
         try {
-            const resp = await fetch('/api/history/summary');
+            const resp = await fetch(`/api/history/summary?live_quotes=${historyLiveQuotesEnabled ? '1' : '0'}`);
             const result = await resp.json();
             if (!result.success) {
                 tbody.innerHTML = `
@@ -1641,6 +1728,10 @@
                 return;
             }
             historyRowsRaw = Array.isArray(result.data) ? result.data : [];
+            if (typeof result.meta?.live_quotes === 'boolean' && historyLiveQuotesToggle) {
+                historyLiveQuotesToggle.checked = result.meta.live_quotes;
+                historyLiveQuotesEnabled = result.meta.live_quotes;
+            }
             applyHistoryFilters();
             return;
         } catch (err) {
@@ -2087,6 +2178,11 @@
     historyTierFilter?.addEventListener('change', (event) => {
         historyFilters.tier = event.target.value ? event.target.value.toLowerCase() : '';
         applyHistoryFilters();
+    });
+
+    historyLiveQuotesToggle?.addEventListener('change', () => {
+        historyLiveQuotesEnabled = historyLiveQuotesToggle.checked;
+        fetchHistorySummary();
     });
 
     historyResetFiltersBtn?.addEventListener('click', () => {
