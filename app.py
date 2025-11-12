@@ -17,6 +17,12 @@ from werkzeug.exceptions import HTTPException, InternalServerError
 from dotenv import load_dotenv
 from openai import OpenAI
 import xml.etree.ElementTree as ET
+from prompts import (
+    HIGH_GROWTH_ANALYSIS_PROMPT,
+    HISTORY_DEEP_DIVE_PROMPT,
+    NEWS_SYSTEM_PROMPT,
+    select_scanner_prompt
+)
 
 # -------------------------------------------------------------
 #  Setup
@@ -77,7 +83,9 @@ PROFILE_LABELS = {
     "hedge_fund": "Hedge Fund PM",
     "pro_trader": "Pro Momentum",
     "catalyst": "News / SEC",
-    "bio_analyst": "Biotech Catalyst"
+    "bio_analyst": "Biotech Catalyst",
+    "immediate_breakout": "Breakout Radar",
+    "high_growth": "High Growth"
 }
 
 
@@ -331,370 +339,6 @@ init_alert_history_db()
 ensure_alert_history_columns()
 load_alert_history_cache()
 
-# -------------------------------------------------------------
-#  SYSTEM PROMPTS
-# -------------------------------------------------------------
-
-# 1) Original Hedge Fund prompt (unchanged)
-SCANNER_RESPONSE_SCHEMA = """
-Unified JSON schema (copy/paste into your prompt)
-{
-  "type": "object",
-  "title": "ScannerResponse",
-  "required": ["SmallCap", "MidCap", "LargeCap"],
-  "properties": {
-    "SmallCap": { "type": "array", "items": { "$ref": "#/definitions/Alert" } },
-    "MidCap":   { "type": "array", "items": { "$ref": "#/definitions/Alert" } },
-    "LargeCap": { "type": "array", "items": { "$ref": "#/definitions/Alert" } }
-  },
-  "definitions": {
-    "Alert": {
-      "type": "object",
-      "required": [
-        "Ticker",
-        "EntryPrice",
-        "TargetPrice",
-        "StopPrice",
-        "RiskReward",
-        "PotentialGainPercent",
-        "SetupType",
-        "TrendState",
-        "Conviction",
-        "PrimaryCatalyst",
-        "CatalystType",
-        "DecisionFactors",
-        "DetailedAnalysis",
-        "DataFreshness"
-      ],
-      "properties": {
-        "Ticker": { "type": "string", "pattern": "^[A-Z.]{1,10}$" },
-
-        "EntryPrice": { "type": "number" },
-        "TargetPrice": { "type": "number" },
-        "StopPrice":   { "type": "number" },
-
-        "RiskReward": { "type": "number", "minimum": 0 }, 
-        "PotentialGainPercent": { "type": "number" }, 
-
-        "SetupType": {
-          "type": "string",
-          "enum": [
-            "Breakout",
-            "Retest/Support Buy",
-            "Momentum Continuation",
-            "Volatility Contraction",
-            "Reversal",
-            "News-Driven"
-          ]
-        },
-
-        "TrendState": {
-          "type": "string",
-          "enum": ["Uptrend", "Sideways", "Downtrend"]
-        },
-
-        "Conviction": { "type": "integer", "minimum": 1, "maximum": 5 },
-
-        "PrimaryCatalyst": { "type": "string" },
-
-        "CatalystType": {
-          "type": ["string", "null"],
-          "enum": [
-            "FDA",
-            "SEC",
-            "Earnings",
-            "M&A / Strategic",
-            "Guidance/Analyst",
-            "Macro/Sector",
-            "None",
-            null
-          ]
-        },
-
-        "DecisionFactors": {
-          "type": "array",
-          "minItems": 3,
-          "maxItems": 6,
-          "items": { "type": "string" },
-          "description": "Most important reasons a trader would act (concise bullets)."
-        },
-
-        "DetailedAnalysis": {
-          "type": "string",
-          "description": "3 bullet points: (1) structure/mechanism, (2) flow/context, (3) risk/invalidations."
-        },
-
-        "DataFreshness": {
-          "type": "string",
-          "format": "date-time",
-          "description": "ISO8601 timestamp of when this idea was formed (UTC)."
-        },
-
-        "MomentumScore": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
-        "LiquidityUSD":  { "type": ["number", "null"], "description": "Avg daily dollar volume" },
-        "ShortInterestFloat": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
-        "RelativeStrengthVsSector": { "type": ["number", "null"], "description": "RS ratio or percentile vs sector ETF" },
-        "ATRPercent": { "type": ["number", "null"], "description": "ATR as % of price" },
-        "VolumeVsAvg": { "type": ["number", "null"], "description": "Current volume vs 30d avg, e.g., 1.8 = 180%" },
-
-        "Notes": { "type": ["string", "null"] },
-
-        "AIEntryPrice": { "type": ["number", "null"], "description": "Optional: original AI entry before any downstream overwrite." }
-      },
-      "additionalProperties": false
-    }
-  },
-  "additionalProperties": false
-}
-
-Output rules to include at the end of each system prompt
-
-STRICT OUTPUT: Return exactly one JSON object conforming to ScannerResponse.
-
-No markdown, no explanations, no prose outside JSON.
-
-Numbers as numbers (no currency symbols or % signs).
-
-If a value is unavailable, use null (not empty strings).
-
-Aim 5–10 alerts per bucket when available; otherwise return as many valid as exist (can be 0).
-
-Order each bucket strongest→weakest based on setup quality + R/R + catalyst power (for catalyst profile).
-
-Example (one alert object only, for clarity)
-{
-  "SmallCap": [
-    {
-      "Ticker": "RXRX",
-      "EntryPrice": 9.8,
-      "TargetPrice": 12.5,
-      "StopPrice": 8.9,
-      "RiskReward": 3.0,
-      "PotentialGainPercent": 27.55,
-      "SetupType": "News-Driven",
-      "TrendState": "Uptrend",
-      "Conviction": 4,
-      "PrimaryCatalyst": "FDA fast track for lead asset; strong volume expansion",
-      "CatalystType": "FDA",
-      "DecisionFactors": [
-        "Powerful FDA catalyst with immediate price/volume confirmation",
-        "Funds rotation into SMID biotech; RS vs XBI elevated",
-        "Defined invalidation below post-news range low"
-      ],
-      "DetailedAnalysis": "- Breakout from multi-week base on news\\n- Options flow and RVOL confirm demand\\n- Invalidate on close below 8.9 to protect capital",
-      "DataFreshness": "2025-11-09T02:15:00Z",
-      "MomentumScore": 78,
-      "LiquidityUSD": 145000000,
-      "ShortInterestFloat": 12.4,
-      "RelativeStrengthVsSector": 1.23,
-      "ATRPercent": 6.1,
-      "VolumeVsAvg": 2.6,
-      "Notes": null,
-      "AIEntryPrice": null
-    }
-  ],
-  "MidCap": [],
-  "LargeCap": []
-}
-"""
-
-# 1) Original Hedge Fund prompt (risk-first, asymmetric R/R)
-HEDGE_FUND_PROMPT = """
-SYSTEM
-You are the lead Quant analyst for a private hedge fund. Identify high-alpha swing trades with asymmetric risk/reward and institutional quality. Scan all US equities.
-
-Segregation: Bucket ideas into SmallCap, MidCap, LargeCap.
-
-Technical admission (must have ≥1):
-- 5-day avg volume ≥ 200% of 20-day avg, or
-- Volatility contraction (ATR near 10-day low) followed by ATR expansion, or
-- OBV rising while price consolidates over last 48h (accumulation divergence), or
-- Recent price closing near or above 20-day or 50-day highs.
-
-Flow/positioning (must have ≥1):
-- Short interest ≥ 10% float or Days-to-Cover > 3,
-- Relative strength vs its sector ETF over past 5 days,
-- Institutional ownership ≥ 20% or recent large block trades in last 10 days.
-
-Catalyst preference: SEC (8-K / Form 4 cluster), FDA, earnings surprises, credible corporate actions in last 72h.
-
-Risk discipline: R/R ≥ 2.5:1 ( (Target−Entry)/(Entry−Stop) ).
-
-Quantity & ranking: Aim 5–10 per bucket when possible. Rank strongest→weakest by setup quality, R/R, and institutional backing.
-
-OUTPUT: Return one JSON object only conforming exactly to the ScannerResponse schema below. No prose, no markdown.
-""" + SCANNER_RESPONSE_SCHEMA
-
-# 2) Pro Momentum Trader (idea breadth, liquid momentum)
-PRO_TRADER_PROMPT = """
-SYSTEM
-You are an aggressive momentum trader surfacing liquid swing setups (days→weeks).
-
-Segregation: SmallCap / MidCap / LargeCap.
-
-Filters: Avoid illiquid micros; focus on adequate dollar volume.
-
-Momentum admission (≥1):
-- Breakout or base retest at key level (20-day or 50-day moving average),
-- Trend continuation after MA pullback,
-- Short-term momentum spike with volume confirmation (volume ≥ 150% of 20-day avg),
-- RSI crossing above 60 to confirm momentum strength.
-
-Catalyst: Nice-to-have; tag if present.
-
-Risk discipline: R/R ≥ 2.0:1.
-
-Momentum telemetry: Only include tickers where you can provide BOTH MomentumScore (0‑100) and VolumeVsAvg (≥1.2). If that data is unavailable, pick another name. Favor liquid names (LiquidityUSD ≥ $5M) and ensure setups remain distinct from catalyst ideas (no reliance on fresh news).
-
-Quantity & ranking: 5–10 per bucket if feasible, rank strongest→weakest.
-
-OUTPUT: Exactly the ScannerResponse schema. JSON only.
-""" + SCANNER_RESPONSE_SCHEMA
-
-# 3) News / Catalyst Hunter (event-driven)
-CATALYST_HUNTER_PROMPT = """
-SYSTEM
-You are a catalyst trader prioritizing fresh, high-impact events in last 72h:
-- FDA actions,
-- SEC filings with impact (8-K, merger, Form 4 clusters),
-- Earnings shocks/guidance,
-- M&A / strategic deals / buybacks / spin-offs,
-- Major macro/sector news directly affecting the ticker.
-
-Technical preference: Clean reaction (breakout/base/trend resumption). Avoid one-off illiquid spikes.
-
-Risk guideline: Prefer R/R ≥ 2.0:1; include slightly lower only if catalyst is exceptionally strong (flag risk in analysis).
-
-Quantity & ranking: 5–10 per bucket if news flow allows. Rank strongest→weakest by catalyst power, technicals, and R/R.
-
-Catalyst enforcement: Every alert MUST cite a concrete event (FDA, SEC, Earnings, M&A / Strategic, Guidance/Analyst, Macro/Sector). Set CatalystType accordingly (never "None"), describe the event inside PrimaryCatalyst, and ensure DecisionFactors reference it specifically. Skip any ticker lacking a verifiable catalyst within 72h.
-
-Filters:
-- Minimum average daily volume ≥ 500k shares,
-- Minimum price move ≥ 5% within 72h of catalyst,
-- Volume spike on catalyst day ≥ 150% of 20-day average,
-- Flag contrarian setups where short interest ≥ 15% float but price breaks cleanly on catalyst.
-
-OUTPUT: Exactly the ScannerResponse schema. JSON only.
-""" + SCANNER_RESPONSE_SCHEMA
-
-# 4) Biotech Catalyst Analyst
-BIO_TECH_ANALYST_PROMPT = """
-SYSTEM
-You are a quantitative biotech hedge fund analyst hunting pre-catalyst breakouts in US-listed biotech equities.
-
-Scope:
-- Exchanges: NASDAQ & NYSE, biotech/biopharma focus (GICS 35201010 / SIC 2836 equivalents).
-- Market capitalization: $250M – $5B (small-to-mid cap sweet spot).
-- Liquidity: 30-day average volume > 100k shares AND LiquidityUSD ≥ $2M when data allows.
-
-Step 1 — Universe:
-- Only include tickers clearing the scope above; ignore mega-cap pharma.
-
-Step 2 — Clinical catalysts (MANDATORY):
-- Must surface companies with active Phase 2b (randomized) or Phase 3 trials.
-- Trials must be in Recruiting or Active, not recruiting.
-- Estimated primary completion or study completion within the next 1–4 fiscal quarters.
-- Prioritize indications: Oncology (NSCLC, Glioblastoma), Neurology (Alzheimer's, Parkinson's), Metabolic (NASH, T2D), Autoimmune.
-- Primary endpoints should be efficacy-driven (OS, PFS, or statistically powered surrogate).
-- Reference the ClinicalTrials.gov identifier inside DecisionFactors.
-
-Step 3 — Regulatory / sentiment overlays (at least one per idea):
-- Company holds Breakthrough, Fast Track, Orphan, or Priority Review designation.
-- Recent (≤90 days) press release, 8-K, or analyst report citing:
-  * positive interim analysis,
-  * Data Monitoring Committee recommendation,
-  * end-of-Phase 2 meeting outcome,
-  * pre-BLA/NDA engagement,
-  * submission acceptance or priority review clock.
-- Analyst sentiment from tier-1 banks (Jefferies, Goldman, SVB, etc.) upgraded/affirmed Buy or Outperform with higher target in last 90 days.
-
-Step 4 — Fundamental & technical hygiene:
-- Cash plus equivalents ≥ 12 months of burn (flag in DetailedAnalysis if tight).
-- Short interest < 15% float unless justified (note rationale).
-- Prefer base/consolidation structures with constructive volume and accumulation footprints indicating positioning ahead of data.
-
-Scoring / Output expectations:
-- Rank 3–5 strongest tickers per bucket (Small/Mid/Large). If LargeCap lacks qualifying names, leave empty rather than diluting quality.
-- Provide RiskReward ≥ 2.5:1 when possible; explain if otherwise.
-- PrimaryCatalyst must clearly describe the upcoming trial/regulatory milestone AND timeline window (e.g., “Phase 3 glioblastoma OS readout expected Q3 FY25”).
-- CatalystType should be “FDA”, “Clinical Trial”, or “Guidance/Analyst” as appropriate (never “None”).
-- DecisionFactors must connect clinical timing, regulatory designations, liquidity runway, and technical posture.
-
-OUTPUT: ONE JSON object matching the ScannerResponse schema exactly. No prose.
-""" + SCANNER_RESPONSE_SCHEMA
-
-# News AI system prompt (emphasize decision factors)
-NEWS_SYSTEM_PROMPT = """
-You are an equity research analyst. 
-Your job is to read a single news item about one or more stocks and explain:
-
-1. What is happening (plain English, 2–3 sentences max).
-2. How traders might view this in the short term (bullish, bearish, mixed, or neutral).
-3. Whether the news is likely to have low, medium, or high price impact in the near term.
-4. The most important decision-making factors for traders (3 concise bullets).
-5. Key risks and what could go wrong.
-
-You are NOT giving personalized investment advice. 
-You are only describing how a typical market participant might interpret this headline.
-Always be conservative and remind the user this is not financial advice.
-
-You MUST respond with a single JSON object with these keys:
-
-{
-  "stance": "bullish | bearish | mixed | neutral",
-  "impact_level": "low | medium | high",
-  "summary": "short paragraph summary of the news",
-  "rationale": [
-    "factor 1: most important trading driver (catalyst, revenue, growth, guidance, etc.)",
-    "factor 2: positioning / sentiment / flow or competitive context",
-    "factor 3: key uncertainty or condition that really matters for traders"
-  ],
-  "risk_notes": "1–2 sentence risk disclaimer about volatility and uncertainty",
-  "disclaimer": "This is not personalized financial advice."
-}
-
-Return ONLY this JSON object and nothing else.
-"""
-
-HISTORY_DEEP_DIVE_PROMPT = """
-You are an elite multi-factor trading desk assistant. Given comprehensive context about a US-listed equity
-(recent alerts, trader profile, price snapshot, volume/liquidity stats), produce a dense JSON advisory that helps
-a discretionary trader act decisively. Blend technical, momentum, flow, and catalyst reasoning. Be concise but highly actionable.
-
-Return ONLY a JSON object with EXACTLY this structure:
-{
-  "stance": "bullish | bearish | neutral",
-  "summary": "2-3 sentences synthesizing current price action, recent catalysts, and risk/reward profile",
-  "catalysts": ["concise bullet about relevant catalyst or news", "..."],
-  "levels": {
-    "immediate_support": "price + brief rationale grounded in recent price action or volume profile",
-    "immediate_resistance": "price + brief rationale",
-    "support_zones": ["price + reason (e.g., prior consolidation, gap fill)", "..."],
-    "resistance_zones": ["price + reason (e.g., recent highs, volume clusters)", "..."]
-  },
-  "momentum": [
-    {"indicator": "RSI", "reading": "value (e.g., 72, overbought)", "bias": "bullish/bearish/neutral"},
-    {"indicator": "MACD", "reading": "value or signal status", "bias": "..."},
-    {"indicator": "CCI", "reading": "value", "bias": "..."}
-  ],
-  "volume": {
-    "today_vs_avg": "description of current volume vs 10/30-day averages, noting spikes or dry-up",
-    "notes": "comment on participation breadth, unusual liquidity, or flow"
-  },
-  "action_plan": {
-    "bias": "Buy breakout / Short pop / Wait / Range trade",
-    "entries": ["specific price zones or trigger conditions"],
-    "targets": ["near-term price targets with rationale"],
-    "stops": ["protective stop price levels and justification"]
-  },
-  "future_view": "short paragraph outlining the next 1-2 week outlook (e.g., Fibonacci retracements, ADX trends, CCI signals)",
-  "risk_notes": "key risks including failure modes, gap risk, upcoming catalysts",
-  "disclaimer": "This is not personalized financial advice."
-}
-
-Always ground price levels and rationale in the provided snapshot/context; acknowledge missing data. Mention notable flow/positioning (short interest, institutional activity) when relevant. Keep the synthesis professional and tight for a high-caliber discretionary trader.
-"""
 
 # -------------------------------------------------------------
 #  Helper: Extract JSON from AI output
@@ -1450,6 +1094,53 @@ def api_news_analysis():
         }), 500
 
 
+@app.route("/api/high-growth/analysis", methods=["POST"])
+@auth.login_required
+def high_growth_analysis_api():
+    if not pplx_client:
+        return jsonify({
+            "success": False,
+            "error": "PPLX_API_KEY is missing or invalid. Cannot connect to Perplexity."
+        }), 503
+
+    payload = request.get_json(silent=True) or {}
+    candidate = payload.get("candidate") or {}
+    ticker = (candidate.get("ticker") or payload.get("ticker") or "").strip().upper()
+    if not ticker:
+        return jsonify({
+            "success": False,
+            "error": "Ticker is required for analysis."
+        }), 400
+
+    context = format_candidate_context(candidate)
+    user_prompt = (
+        "High-growth candidate details (use exactly as provided; note missing data explicitly):\n"
+        f"{context}\n\n"
+        "Return ONLY the JSON object described in the system prompt."
+    )
+
+    try:
+        response = pplx_client.chat.completions.create(
+            model="sonar-reasoning-pro",
+            messages=[
+                {"role": "system", "content": HIGH_GROWTH_ANALYSIS_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
+            extra_body={"search_recency_filter": "week"}
+        )
+        raw = response.choices[0].message.content or ""
+        json_str = extract_json_from_text(raw)
+        data = json.loads(json_str)
+        data.setdefault("ticker", ticker)
+        return jsonify({"success": True, "data": data})
+    except Exception as exc:
+        logging.error(f"High growth analysis error: {type(exc).__name__} - {exc}")
+        return jsonify({
+            "success": False,
+            "error": "AI analysis failed."
+        }), 500
+
+
 def count_alerts(data: Dict[str, Any]) -> int:
     total = 0
     for bucket in ["SmallCap", "MidCap", "LargeCap"]:
@@ -1472,6 +1163,22 @@ def dedupe_alerts(data: Dict[str, Any]) -> Dict[str, Any]:
     return data
 
 
+def normalize_high_growth_payload(raw: Any) -> Dict[str, Any]:
+    if not isinstance(raw, dict):
+        raw = {}
+    timestamp = raw.get("timestamp")
+    if not timestamp:
+        timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    candidates = raw.get("candidates")
+    if not isinstance(candidates, list):
+        candidates = []
+    normalized_candidates = [c for c in candidates if isinstance(c, dict)]
+    return {
+        "timestamp": timestamp,
+        "candidates": normalized_candidates
+    }
+
+
 def _api_error_response(message: str, status_code: int):
     return jsonify({
         "success": False,
@@ -1485,8 +1192,9 @@ def _api_error_response(message: str, status_code: int):
 
 
 def should_trigger_fallback(profile: str, data: Dict[str, Any]) -> bool:
-    min_total = 6 if profile in ("pro_trader", "catalyst") else 3
-    min_bucket = 2 if profile in ("pro_trader", "catalyst") else 0
+    high_output_profiles = ("pro_trader", "catalyst", "immediate_breakout")
+    min_total = 6 if profile in high_output_profiles else 3
+    min_bucket = 2 if profile in high_output_profiles else 0
     total = count_alerts(data)
     if total >= min_total:
         return False
@@ -1504,6 +1212,16 @@ def merge_scanner_data(primary: Dict[str, Any], fallback: Dict[str, Any]) -> Dic
 
 
 def build_user_prompt(profile: str) -> str:
+    if profile == "high_growth":
+        return (
+            "Begin the high-growth innovators scan now. Surface AT LEAST six (6) and up to twelve"
+            " total candidates that satisfy the system instructions—even if you must rely on proxied"
+            " telemetry or older filings (label those cases explicitly).\n"
+            "Your ONLY response must be one JSON object with this shape:\n"
+            "{\"timestamp\": \"YYYY-MM-DDTHH:MM:SSZ\", \"candidates\": [{...}]}.\n"
+            "Do not provide markdown, commentary, or multiple JSON blocks. Rank the candidates"
+            " strongest→weakest within the array and avoid returning an empty list."
+        )
     return (
         "Begin scan now. For each of SmallCap, MidCap, and LargeCap, "
         "try to return between 5 and 10 candidates that satisfy the rules in the system prompt.\n"
@@ -1529,10 +1247,40 @@ def build_fallback_prompt(profile: str) -> str:
             "and events up to 5 days old. Every alert still requires a specific catalyst detail with CatalystType set accurately. "
             "Return NEW tickers not already provided."
         )
+    if profile == "immediate_breakout":
+        return (
+            "The prior breakout scan was sparse. Expand the universe to include liquid ADRs and ETFs, allow VolumeVsAvg down to 1.0, "
+            "and accept setups where the breakout trigger may occur within 10 days (state the timing explicitly). "
+            "All symbols must still present actionable levels and conform to the JSON schema. Return fresh tickers not already used."
+        )
     return (
         "The previous scan returned too few valid ideas. Relax non-critical filters slightly but maintain "
         "risk discipline and schema requirements. Provide additional unique tickers."
     )
+
+
+def format_candidate_context(candidate: Dict[str, Any]) -> str:
+    def _fmt(key: str, label: str) -> str:
+        val = candidate.get(key)
+        if val is None:
+            return f"{label}: N/A"
+        return f"{label}: {val}"
+
+    lines = [
+        _fmt("ticker", "Ticker"),
+        _fmt("company_name", "Company"),
+        _fmt("sector", "Sector"),
+        _fmt("market_cap", "Market cap"),
+        _fmt("growth_metric", "Growth metric"),
+        _fmt("growth_period", "Growth period"),
+        _fmt("catalyst", "Catalyst"),
+        _fmt("data_source", "Source"),
+        _fmt("institutional_ownership", "Institutional ownership"),
+        _fmt("risk_reward", "Risk/Reward"),
+        _fmt("technical_indicators", "Technical context"),
+        _fmt("notes", "Notes")
+    ]
+    return "\n".join(lines)
 
 
 def call_perplexity(
@@ -1603,22 +1351,23 @@ def run_scanner_api():
 
     try:
         payload = request.get_json(silent=True) or {}
-        profile = (payload.get("profile") or "hedge_fund").lower()
+        profile = (payload.get("profile") or "hedge_fund").strip().lower()
+        profile = profile.replace("-", "_")
+        if profile in {"growth", "highgrowth", "growth_analyst"}:
+            profile = "high_growth"
+        allowed_profiles = {"hedge_fund", "pro_trader", "catalyst", "bio_analyst", "immediate_breakout", "high_growth"}
+        if profile not in allowed_profiles:
+            profile = "hedge_fund"
         requested_model = payload.get("model_variant") or payload.get("model")
         selected_model = resolve_pplx_model(requested_model or "")
         user_allow_fallback = bool(payload.get("allow_fallback"))
+        is_growth_profile = (profile == "high_growth")
 
-        if profile == "pro_trader":
-            system_prompt = PRO_TRADER_PROMPT
-        elif profile == "catalyst":
-            system_prompt = CATALYST_HUNTER_PROMPT
-        elif profile == "bio_analyst":
-            system_prompt = BIO_TECH_ANALYST_PROMPT
-        else:
-            system_prompt = HEDGE_FUND_PROMPT
-            profile = "hedge_fund"
+        system_prompt = select_scanner_prompt(profile, selected_model)
 
-        fallback_allowed = (SCANNER_ALLOW_FALLBACK or user_allow_fallback) and profile != "hedge_fund"
+        fallback_allowed = (
+            SCANNER_ALLOW_FALLBACK or user_allow_fallback
+        ) and profile not in {"hedge_fund", "high_growth"}
 
         logging.info("Sending request to Perplexity API for scanner profile: %s model=%s", profile, selected_model)
         primary = call_perplexity(
@@ -1629,7 +1378,7 @@ def run_scanner_api():
 
         fallback_used = False
         fallback_suppressed = False
-        if profile != "hedge_fund" and should_trigger_fallback(profile, primary):
+        if (not is_growth_profile) and profile != "hedge_fund" and should_trigger_fallback(profile, primary):
             if fallback_allowed:
                 logging.info("Primary scan sparse for %s; attempting fallback with model %s.", profile, selected_model)
                 try:
@@ -1647,21 +1396,24 @@ def run_scanner_api():
                 fallback_suppressed = True
                 logging.info("Fallback suppressed for profile %s (manual toggle off).", profile)
 
-        data = dedupe_alerts(primary)
-        if fallback_used:
-            for bucket in ["SmallCap", "MidCap", "LargeCap"]:
-                for alert in data.get(bucket, []) or []:
-                    alert.setdefault("Notes", "Auto-expanded criteria to satisfy idea quota.")
+        if is_growth_profile:
+            data = normalize_high_growth_payload(primary)
+        else:
+            data = dedupe_alerts(primary)
+            if fallback_used:
+                for bucket in ["SmallCap", "MidCap", "LargeCap"]:
+                    for alert in data.get(bucket, []) or []:
+                        alert.setdefault("Notes", "Auto-expanded criteria to satisfy idea quota.")
 
-        try:
-            data = enrich_scanner_with_realtime_prices(data)
-        except Exception as e:
-            logging.error(f"Price enrichment failed: {e}")
+            try:
+                data = enrich_scanner_with_realtime_prices(data)
+            except Exception as e:
+                logging.error(f"Price enrichment failed: {e}")
 
-        try:
-            record_alert_history(profile, data)
-        except Exception as e:
-            logging.error(f"Failed to record alert history: {e}")
+            try:
+                record_alert_history(profile, data)
+            except Exception as e:
+                logging.error(f"Failed to record alert history: {e}")
 
         meta = {
             "model": selected_model,

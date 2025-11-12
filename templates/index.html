@@ -121,6 +121,11 @@
             border: 1px solid rgba(16, 185, 129, 0.7);
         }
 
+        .pill-growth {
+            background: rgba(248, 113, 113, 0.12);
+            border: 1px solid rgba(248, 113, 113, 0.6);
+        }
+
         .scanner-tier-header {
             border-radius: 0.9rem 0.9rem 0 0;
         }
@@ -545,6 +550,9 @@
                                 <button class="btn btn-outline-light" data-profile="bio_analyst" id="btnProfileBio">
                                     <span class="pill pill-bio">Biotech</span>
                                 </button>
+                                <button class="btn btn-outline-light" data-profile="high_growth" id="btnProfileGrowth">
+                                    <span class="pill pill-growth">High Growth</span>
+                                </button>
                             </div>
                         </div>
                         <div class="d-flex flex-wrap align-items-center gap-2">
@@ -566,111 +574,155 @@
                 </div>
             </div>
 
-            <!-- 3 tiers row -->
-            <div class="row g-3 mb-3">
-                <!-- SmallCap -->
-                <div class="col-12 col-lg-4">
-                    <div class="card h-100">
-                        <div class="card-header scanner-tier-header">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <span class="badge bg-danger-subtle text-danger">🔥 SmallCap / High Beta</span>
+            <div id="scanner-buckets-wrapper">
+                <!-- 3 tiers row -->
+                <div class="row g-3 mb-3">
+                    <!-- SmallCap -->
+                    <div class="col-12 col-lg-4">
+                        <div class="card h-100">
+                            <div class="card-header scanner-tier-header">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="badge bg-danger-subtle text-danger">🔥 SmallCap / High Beta</span>
+                                    </div>
+                                    <small class="text-muted">Aggressive</small>
                                 </div>
-                                <small class="text-muted">Aggressive</small>
+                            </div>
+                            <div class="card-body p-0">
+                                <table class="table table-dark table-striped table-hover mb-0 scanner-table">
+                                    <thead>
+                                    <tr>
+                                        <th>Ticker</th>
+                                        <th>Entry</th>
+                                        <th>Target (%)</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="SmallCap-table">
+                                    <tr>
+                                        <td colspan="3" class="text-center text-muted py-3">
+                                            No data yet. Run scanner.
+                                        </td>
+                                    </tr>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
-                        <div class="card-body p-0">
-                            <table class="table table-dark table-striped table-hover mb-0 scanner-table">
-                                <thead>
-                                <tr>
-                                    <th>Ticker</th>
-                                    <th>Entry</th>
-                                    <th>Target (%)</th>
-                                </tr>
-                                </thead>
-                                <tbody id="SmallCap-table">
-                                <tr>
-                                    <td colspan="3" class="text-center text-muted py-3">
-                                        No data yet. Run scanner.
-                                    </td>
-                                </tr>
-                                </tbody>
-                            </table>
+                    </div>
+
+                    <!-- MidCap -->
+                    <div class="col-12 col-lg-4">
+                        <div class="card h-100">
+                            <div class="card-header scanner-tier-header">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="badge bg-warning-subtle text-warning">🟡 MidCap / Liquidity Mix</span>
+                                    </div>
+                                    <small class="text-muted">Balanced</small>
+                                </div>
+                            </div>
+                            <div class="card-body p-0">
+                                <table class="table table-dark table-striped table-hover mb-0 scanner-table">
+                                    <thead>
+                                    <tr>
+                                        <th>Ticker</th>
+                                        <th>Entry</th>
+                                        <th>Target (%)</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="MidCap-table">
+                                    <tr>
+                                        <td colspan="3" class="text-center text-muted py-3">
+                                            No data yet. Run scanner.
+                                        </td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- LargeCap -->
+                    <div class="col-12 col-lg-4">
+                        <div class="card h-100">
+                            <div class="card-header scanner-tier-header">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <span class="badge bg-success-subtle text-success">🟢 LargeCap / Institutional</span>
+                                    </div>
+                                    <small class="text-muted">Stable</small>
+                                </div>
+                            </div>
+                            <div class="card-body p-0">
+                                <table class="table table-dark table-striped table-hover mb-0 scanner-table">
+                                    <thead>
+                                    <tr>
+                                        <th>Ticker</th>
+                                        <th>Entry</th>
+                                        <th>Target (%)</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="LargeCap-table">
+                                    <tr>
+                                        <td colspan="3" class="text-center text-muted py-3">
+                                            No data yet. Run scanner.
+                                        </td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- MidCap -->
-                <div class="col-12 col-lg-4">
-                    <div class="card h-100">
-                        <div class="card-header scanner-tier-header">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <span class="badge bg-warning-subtle text-warning">🟡 MidCap / Liquidity Mix</span>
-                                </div>
-                                <small class="text-muted">Balanced</small>
-                            </div>
-                        </div>
-                        <div class="card-body p-0">
-                            <table class="table table-dark table-striped table-hover mb-0 scanner-table">
-                                <thead>
-                                <tr>
-                                    <th>Ticker</th>
-                                    <th>Entry</th>
-                                    <th>Target (%)</th>
-                                </tr>
-                                </thead>
-                                <tbody id="MidCap-table">
-                                <tr>
-                                    <td colspan="3" class="text-center text-muted py-3">
-                                        No data yet. Run scanner.
-                                    </td>
-                                </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- LargeCap -->
-                <div class="col-12 col-lg-4">
-                    <div class="card h-100">
-                        <div class="card-header scanner-tier-header">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <span class="badge bg-success-subtle text-success">🟢 LargeCap / Institutional</span>
-                                </div>
-                                <small class="text-muted">Stable</small>
-                            </div>
-                        </div>
-                        <div class="card-body p-0">
-                            <table class="table table-dark table-striped table-hover mb-0 scanner-table">
-                                <thead>
-                                <tr>
-                                    <th>Ticker</th>
-                                    <th>Entry</th>
-                                    <th>Target (%)</th>
-                                </tr>
-                                </thead>
-                                <tbody id="LargeCap-table">
-                                <tr>
-                                    <td colspan="3" class="text-center text-muted py-3">
-                                        No data yet. Run scanner.
-                                    </td>
-                                </tr>
-                                </tbody>
-                            </table>
-                        </div>
+                <!-- Trading Plan / Details card + History -->
+                <div class="card" id="scanner-analysis-card">
+                    <div class="card-body">
+                        <p class="text-center text-muted mb-0">
+                            Click any ticker in the tables above to load its trading thesis, plan, and alert history here.
+                        </p>
                     </div>
                 </div>
             </div>
 
-            <!-- Trading Plan / Details card + History -->
-            <div class="card" id="scanner-analysis-card">
+            <div class="card d-none" id="growth-results-card">
+                <div class="card-header d-flex flex-wrap justify-content-between align-items-center">
+                    <h5 class="mb-0">High-Growth Innovators</h5>
+                    <small class="text-muted" id="growth-timestamp">Timestamp: —</small>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-hover mb-0">
+                            <thead class="text-nowrap">
+                            <tr>
+                                <th>Ticker</th>
+                                <th>Company</th>
+                                <th>Sector</th>
+                                <th>Market Cap</th>
+                                <th>Growth Metric</th>
+                                <th>Period</th>
+                                <th>Catalyst</th>
+                                <th>Source</th>
+                                <th>Inst. Own</th>
+                                <th>Risk/Reward</th>
+                                <th>Technical Indicators</th>
+                                <th>Notes</th>
+                            </tr>
+                            </thead>
+                            <tbody id="growth-table-body">
+                            <tr>
+                                <td colspan="12" class="text-center text-muted py-3">
+                                    Run the scanner with the High Growth profile to populate this table.
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-3 d-none" id="growth-analysis-card">
                 <div class="card-body">
-                    <p class="text-center text-muted mb-0">
-                        Click any ticker in the tables above to load its trading thesis, plan, and alert history here.
-                    </p>
+                    <p class="text-center text-muted mb-0">Select a candidate above to load the full AI playbook.</p>
                 </div>
             </div>
         </div>
@@ -893,7 +945,8 @@
         hedge_fund: 'Hedge Fund PM',
         pro_trader: 'Pro Momentum',
         catalyst: 'News / SEC',
-        bio_analyst: 'Biotech Catalyst'
+        bio_analyst: 'Biotech Catalyst',
+        high_growth: 'High Growth'
     };
     const MODEL_LABELS = {
         reasoning: 'Reasoning (Deep Search)',
@@ -923,26 +976,219 @@
         return text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
+    function setGrowthAnalysisMessage(message) {
+        if (!growthAnalysisCard) return;
+        growthAnalysisCard.innerHTML = `
+            <div class="card-body">
+                <p class="text-center text-muted mb-0">${message}</p>
+            </div>
+        `;
+    }
+
+    function toggleGrowthLayout(showGrowth) {
+        if (scannerBucketsWrapper) scannerBucketsWrapper.classList.toggle('d-none', showGrowth);
+        if (scannerAnalysisCardEl) scannerAnalysisCardEl.classList.toggle('d-none', showGrowth);
+        if (growthResultsCard) growthResultsCard.classList.toggle('d-none', !showGrowth);
+        if (growthAnalysisCard) {
+            if (showGrowth) {
+                growthAnalysisCard.classList.remove('d-none');
+                setGrowthAnalysisMessage('Select a candidate above to load the full AI playbook.');
+            } else {
+                growthAnalysisCard.classList.add('d-none');
+            }
+        }
+    }
+
+    function renderGrowthTable() {
+        toggleGrowthLayout(true);
+        if (!growthTableBody) return;
+
+        const list = Array.isArray(allScanData && allScanData.candidates)
+            ? allScanData.candidates
+            : [];
+        const timestamp = allScanData && allScanData.timestamp;
+        if (growthTimestamp) {
+            const label = timestamp ? new Date(timestamp).toLocaleString() : '—';
+            growthTimestamp.textContent = `Timestamp: ${label}`;
+        }
+
+        const formatField = (value) => {
+            if (value === null || value === undefined) return '-';
+            if (typeof value === 'number') return String(value);
+            const cleaned = stripHtml(String(value));
+            return cleaned.length ? cleaned : '-';
+        };
+
+        if (!list.length) {
+            growthTableBody.innerHTML = `
+                <tr>
+                    <td colspan="12" class="text-center text-muted py-3">
+                        No high-growth candidates returned. Run the scan again.
+                    </td>
+                </tr>
+            `;
+            setGrowthAnalysisMessage('No candidates available yet. Run a scan to view details.');
+            return;
+        }
+
+        growthTableBody.innerHTML = '';
+        setGrowthAnalysisMessage('Select a candidate above to load the full AI playbook.');
+        list.forEach(candidate => {
+            const row = document.createElement('tr');
+            const ticker = formatField(candidate.ticker).toUpperCase();
+            row.innerHTML = `
+                <td><span class="ticker-chip">${ticker || '-'}</span></td>
+                <td>${formatField(candidate.company_name)}</td>
+                <td>${formatField(candidate.sector)}</td>
+                <td>${formatField(candidate.market_cap)}</td>
+                <td>${formatField(candidate.growth_metric)}</td>
+                <td>${formatField(candidate.growth_period)}</td>
+                <td>${formatField(candidate.catalyst)}</td>
+                <td>${formatField(candidate.data_source)}</td>
+                <td>${formatField(candidate.institutional_ownership)}</td>
+                <td>${formatField(candidate.risk_reward)}</td>
+                <td>${formatField(candidate.technical_indicators)}</td>
+                <td>${formatField(candidate.notes)}</td>
+            `;
+            row.style.cursor = 'pointer';
+            row.addEventListener('click', () => showGrowthAnalysis(candidate));
+            growthTableBody.appendChild(row);
+        });
+    }
+
+    async function showGrowthAnalysis(candidate) {
+        if (!growthAnalysisCard) return;
+        const title = stripHtml(String(candidate.company_name || candidate.ticker || 'Candidate'));
+        growthAnalysisCard.innerHTML = `
+            <div class="card-body">
+                <p class="text-muted mb-0">Loading analysis for <strong>${title}</strong>…</p>
+            </div>
+        `;
+        try {
+            const resp = await fetch('/api/high-growth/analysis', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ candidate })
+            });
+            const result = await resp.json();
+            if (!resp.ok || !result.success) {
+                throw new Error(result?.error || `Server error (${resp.status})`);
+            }
+            renderGrowthAnalysisCard(candidate, result.data || {});
+        } catch (err) {
+            console.error('High growth analysis error', err);
+            setGrowthAnalysisMessage('Unable to load AI analysis. Please try again.');
+        }
+    }
+
+    function renderGrowthAnalysisCard(candidate, analysis) {
+        if (!growthAnalysisCard) return;
+        const ticker = stripHtml(String(analysis.ticker || candidate.ticker || ''));
+        const company = stripHtml(String(candidate.company_name || ''));
+        const signal = String(analysis.signal || 'Hold');
+        const badgeClass = signalClass(signal);
+        const confidence = Number(analysis.confidence) || 0;
+        const summary = stripHtml(String(analysis.summary || 'No summary provided.'));
+        const thesisList = renderList(analysis.thesis);
+        const catalystsList = renderList(analysis.catalysts);
+        const risksList = renderList(analysis.risks);
+        const levels = analysis.levels || {};
+        const action = analysis.action_plan || {};
+        const positioning = stripHtml(String(analysis.positioning || 'No positioning guidance.'));
+        const disclaimer = stripHtml(String(analysis.disclaimer || 'This is not personalized financial advice.'));
+
+        growthAnalysisCard.innerHTML = `
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0">${ticker || '—'} ${company ? '– ' + company : ''}</h5>
+                    <small class="text-muted">Signal confidence: ${confidence ? confidence.toFixed(1) + '/5' : 'N/A'}</small>
+                </div>
+                <span class="badge ${badgeClass}">${signal}</span>
+            </div>
+            <div class="card-body">
+                <p class="mb-3">${summary}</p>
+                <div class="row g-3">
+                    <div class="col-12 col-lg-4">
+                        <h6>Thesis</h6>
+                        ${thesisList}
+                        <h6 class="mt-3">Positioning</h6>
+                        <p class="small mb-0">${positioning}</p>
+                    </div>
+                    <div class="col-12 col-lg-4">
+                        <h6>Catalysts</h6>
+                        ${catalystsList}
+                        <h6 class="mt-3">Risks</h6>
+                        ${risksList}
+                    </div>
+                    <div class="col-12 col-lg-4">
+                        <h6>Levels</h6>
+                        <ul class="small mb-3">
+                            <li><strong>Support:</strong> ${stripHtml(String(levels.support || 'N/A'))}</li>
+                            <li><strong>Resistance:</strong> ${stripHtml(String(levels.resistance || 'N/A'))}</li>
+                            <li><strong>Invalidation:</strong> ${stripHtml(String(levels.invalidations || 'N/A'))}</li>
+                        </ul>
+                        <h6>Action Plan</h6>
+                        <ul class="small mb-0">
+                            <li><strong>Entry:</strong> ${stripHtml(String(action.entry || 'N/A'))}</li>
+                            <li><strong>Target:</strong> ${stripHtml(String(action.target || 'N/A'))}</li>
+                            <li><strong>Stop:</strong> ${stripHtml(String(action.stop || 'N/A'))}</li>
+                        </ul>
+                    </div>
+                </div>
+                <p class="text-muted small mt-3 mb-0">${disclaimer}</p>
+            </div>
+        `;
+    }
+
+    function renderList(items) {
+        if (!Array.isArray(items) || !items.length) {
+            return '<p class="small text-muted mb-0">No data provided.</p>';
+        }
+        const list = items
+            .map(entry => `<li>${stripHtml(String(entry || ''))}</li>`)
+            .join('');
+        return `<ul class="small mb-0">${list}</ul>`;
+    }
+
+    function signalClass(signal) {
+        const key = String(signal || '').toLowerCase();
+        if (key.includes('strong buy')) return 'bg-success';
+        if (key.includes('buy') || key.includes('accumulate')) return 'bg-primary';
+        if (key.includes('hold')) return 'bg-warning text-dark';
+        if (key.includes('reduce') || key.includes('avoid') || key.includes('sell')) return 'bg-danger';
+        return 'bg-secondary';
+    }
+
     const btnProfileHedge = document.getElementById('btnProfileHedge');
     const btnProfilePro = document.getElementById('btnProfilePro');
     const btnProfileCat = document.getElementById('btnProfileCat');
     const btnProfileBio = document.getElementById('btnProfileBio');
+    const btnProfileGrowth = document.getElementById('btnProfileGrowth');
     const btnModelReasoning = document.getElementById('btnModelReasoning');
     const btnModelPro = document.getElementById('btnModelPro');
+    const scannerBucketsWrapper = document.getElementById('scanner-buckets-wrapper');
+    const scannerAnalysisCardEl = document.getElementById('scanner-analysis-card');
+    const growthResultsCard = document.getElementById('growth-results-card');
+    const growthTableBody = document.getElementById('growth-table-body');
+    const growthTimestamp = document.getElementById('growth-timestamp');
+    const growthAnalysisCard = document.getElementById('growth-analysis-card');
 
     function setProfile(profile) {
         currentProfile = profile;
-        [btnProfileHedge, btnProfilePro, btnProfileCat, btnProfileBio].forEach(btn => btn.classList.remove('active'));
+        [btnProfileHedge, btnProfilePro, btnProfileCat, btnProfileBio, btnProfileGrowth].forEach(btn => btn && btn.classList.remove('active'));
         if (profile === 'hedge_fund') btnProfileHedge.classList.add('active');
         if (profile === 'pro_trader') btnProfilePro.classList.add('active');
         if (profile === 'catalyst') btnProfileCat.classList.add('active');
         if (profile === 'bio_analyst') btnProfileBio.classList.add('active');
+        if (profile === 'high_growth') btnProfileGrowth.classList.add('active');
+        toggleGrowthLayout(profile === 'high_growth');
     }
 
     btnProfileHedge.addEventListener('click', () => setProfile('hedge_fund'));
     btnProfilePro.addEventListener('click', () => setProfile('pro_trader'));
     btnProfileCat.addEventListener('click', () => setProfile('catalyst'));
     btnProfileBio.addEventListener('click', () => setProfile('bio_analyst'));
+    btnProfileGrowth.addEventListener('click', () => setProfile('high_growth'));
 
     function setModel(model) {
         currentModel = model;
@@ -1042,6 +1288,12 @@
     runScanBtn.addEventListener('click', fetchScan);
 
     function renderScannerTables() {
+        if (currentProfile === 'high_growth') {
+            renderGrowthTable();
+            return;
+        }
+
+        toggleGrowthLayout(false);
         MARKET_CAPS.forEach(cap => {
             const tbody = document.getElementById(cap + '-table');
             tbody.innerHTML = '';
@@ -1176,6 +1428,7 @@
     }
 
     function showScannerAnalysisCard(cap, ticker) {
+        if (currentProfile === 'high_growth') return;
         const card = document.getElementById('scanner-analysis-card');
         const bucket = allScanData[cap] || [];
         const alert = bucket.find(a => (a.Ticker || '').toUpperCase() === ticker.toUpperCase());
