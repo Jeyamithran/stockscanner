@@ -215,6 +215,50 @@ Example candidate (abbreviated):
 }
 """
 
+SUPER_TREND_RESPONSE_SCHEMA = """
+{
+  "generated_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "ideas": [
+    {
+      "ticker": "",
+      "entry": 0,
+      "stop": 0,
+      "target": 0,
+      "trend_since": "YYYY-MM-DD",
+      "supertrend_context": "",
+      "catalyst": "",
+      "news_window": "",
+      "confidence": 1,
+      "timeframe": "",
+      "notes": ""
+    }
+  ]
+}
+"""
+
+ZIGZAG_RESPONSE_SCHEMA = """
+{
+  "generated_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "ideas": [
+    {
+      "ticker": "",
+      "entry": 0,
+      "stop": 0,
+      "target": 0,
+      "direction": "",
+      "pivot_time": "YYYY-MM-DDTHH:MM:SSZ",
+      "pivot_price": 0,
+      "prior_pivot_price": 0,
+      "catalyst": "",
+      "trade_thesis": "",
+      "timeframe": "",
+      "confidence": 1,
+      "notes": ""
+    }
+  ]
+}
+"""
+
 # 1) Original Hedge Fund prompt (risk-first, asymmetric R/R)
 HEDGE_FUND_PROMPT = """
 SYSTEM
@@ -635,6 +679,35 @@ Output target:
 OUTPUT: Respond with ONE JSON object following the High-Growth schema below. Absolutely no prose outside JSON.
 """ + PROMPT_TARGETING_GUIDELINES + GROWTH_ANALYST_RESPONSE_SCHEMA
 
+
+SUPER_TREND_PROMPT = """
+SYSTEM
+You are a tactical swing trader evaluating Supertrend buy signals for five liquid tickers: SPY, QQQ, NVDA, TSLA, MSFT.
+
+Execution rules:
+- Only consider those five tickers. Ignore any others even if news flow exists.
+- Use the supplied indicator telemetry (close, ATR, supertrend bands, buy_signal flag) as the source of truth for trend state. If trend is DOWN, skip the ticker.
+- Validate catalysts that actually matter (earnings, macro prints, delivery numbers, regulatory headlines, notable flows) within the past 72 hours. If nothing credible is found, say "No material catalyst last 72h".
+- Entries should anchor near current price or the supertrend support band; stops belong just beyond the opposite side of that band; targets should reference measured moves (ATR multiples, recent highs, gap levels).
+- Limit output to at most one idea per ticker and no more than five ideas overall.
+
+Respond with strict JSON only (no markdown, no prose) using this schema:
+""" + SUPER_TREND_RESPONSE_SCHEMA
+
+
+ZIGZAG_PROMPT = """
+SYSTEM
+You specialize in swing entries derived from ZigZag swing pivots. Evaluate signals for SPY, QQQ, NVDA, TSLA, and MSFT only.
+
+Execution rules:
+- Use the supplied pivot telemetry (current direction, latest pivot price/time, percent move since prior pivot, deviation/backstep settings) as the source of truth. Do not invent new numbers.
+- Treat direction = "Buy" when the most recent pivot is a swing low (downtrend -> uptrend flip). Direction = "Sell" when the pivot is a swing high.
+- Entries anchor within 0.5% of the latest pivot price; stops sit beyond the prior pivot (for buys) or most recent swing high (for sells); targets should reference measured move symmetry or nearby liquidity levels (recent highs/lows, gaps).
+- Cross-check catalysts from the past 72 hours. If nothing notable, state "No fresh catalyst in last 72h."
+- Output at most five ideas (one per ticker). If a ticker is not actionable, omit it.
+
+Return JSON only using this schema:
+""" + ZIGZAG_RESPONSE_SCHEMA
 
 def select_scanner_prompt(profile: str, model: str) -> str:
     """Return the appropriate system prompt for the profile/model combo."""

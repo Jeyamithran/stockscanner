@@ -126,6 +126,30 @@
             border: 1px solid rgba(248, 113, 113, 0.6);
         }
 
+        .econ-filters .form-label {
+            font-size: 0.85rem;
+            color: var(--text-muted-soft);
+        }
+
+        .econ-impact-pill {
+            font-size: 0.72rem;
+            border-radius: 999px;
+            padding: 0.1rem 0.55rem;
+            letter-spacing: 0.04em;
+        }
+
+        .econ-status-text {
+            color: var(--text-muted-soft);
+        }
+
+        .econ-table td {
+            vertical-align: top;
+        }
+
+        .econ-table .event-title {
+            font-weight: 600;
+        }
+
         .scanner-tier-header {
             border-radius: 0.9rem 0.9rem 0 0;
         }
@@ -800,6 +824,272 @@
                                 No headline selected yet.
                             </p>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-3" id="econ-calendar-card">
+                <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div>
+                        <span class="badge bg-warning-subtle text-warning">Economic Calendar</span>
+                        <span class="econ-status-text small ms-2" id="econStatus">Adjust filters and refresh to load macro events.</span>
+                    </div>
+                    <button id="econRefreshBtn" class="btn btn-outline-light btn-sm" type="button">
+                        Refresh Calendar
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 econ-filters align-items-end">
+                        <div class="col-12 col-lg-3 col-md-6">
+                            <label class="form-label small" for="econRangeSelect">Window</label>
+                            <select class="form-select form-select-sm" id="econRangeSelect">
+                                <option value="today">Today</option>
+                                <option value="48h">Next 48 Hours</option>
+                                <option value="week" selected>This Week</option>
+                                <option value="custom">Next 10 Days</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-lg-3 col-md-6">
+                            <label class="form-label small d-block">Impact</label>
+                            <div class="d-flex flex-wrap gap-2 econ-impact-filters">
+                                <div class="form-check form-check-inline small">
+                                    <input class="form-check-input" type="checkbox" id="econImpactHigh" data-econ-impact="high" checked>
+                                    <label class="form-check-label" for="econImpactHigh">High</label>
+                                </div>
+                                <div class="form-check form-check-inline small">
+                                    <input class="form-check-input" type="checkbox" id="econImpactMed" data-econ-impact="medium" checked>
+                                    <label class="form-check-label" for="econImpactMed">Medium</label>
+                                </div>
+                                <div class="form-check form-check-inline small">
+                                    <input class="form-check-input" type="checkbox" id="econImpactLow" data-econ-impact="low">
+                                    <label class="form-check-label" for="econImpactLow">Low</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-3 col-md-6">
+                            <label class="form-label small" for="econCurrencyInput">Currencies (comma separated)</label>
+                            <input type="text" class="form-control form-control-sm" id="econCurrencyInput" placeholder="USD, EUR, GBP">
+                        </div>
+                        <div class="col-12 col-lg-3 col-md-6">
+                            <label class="form-label small" for="econTzSelect">Display timezone</label>
+                            <select class="form-select form-select-sm" id="econTzSelect">
+                                <option value="0">UTC / GMT</option>
+                                <option value="-300">New York (ET)</option>
+                                <option value="-360">Chicago (CT)</option>
+                                <option value="-480">Los Angeles (PT)</option>
+                                <option value="60">Frankfurt (CET)</option>
+                                <option value="330">Mumbai (IST)</option>
+                                <option value="480">Singapore</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-responsive mt-3">
+                        <table class="table table-dark table-striped table-hover align-middle mb-0 econ-table">
+                            <thead>
+                            <tr>
+                                <th style="min-width: 140px;">Local Time</th>
+                                <th style="min-width: 120px;">Impact / FX</th>
+                                <th>Event</th>
+                                <th style="min-width: 220px;">Actual / Forecast / Previous</th>
+                                <th style="min-width: 130px;">Status</th>
+                            </tr>
+                            </thead>
+                            <tbody id="econ-table-body">
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-3">
+                                    Adjust filters then press Refresh to load the macro calendar.
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-3" id="supertrend-card">
+                <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div>
+                        <span class="badge bg-success-subtle text-success">Supertrend Catalyst Radar</span>
+                        <span class="text-muted small ms-2">Universe: SPY · QQQ · NVDA · TSLA · MSFT</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-3">
+                        <small class="text-muted" id="supertrendLastRun">Last run: —</small>
+                        <button class="btn btn-outline-light btn-sm" id="runSupertrendBtn" type="button">
+                            Run Supertrend Radar
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3" id="supertrendStatus">
+                        Combines Supertrend (ATR 10 x3) with fresh catalysts in the last 72h. Click run to fetch live insights.
+                    </p>
+                    <div class="row g-2 mb-3">
+                        <div class="col-12 col-md-8">
+                            <label class="form-label small" for="supertrendTickersInput">Tickers (comma separated)</label>
+                            <input type="text" class="form-control form-control-sm" id="supertrendTickersInput"
+                                   value="SPY, QQQ, NVDA, TSLA, MSFT"
+                                   placeholder="SPY, QQQ, …">
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small" for="supertrendAtrPeriod">ATR Period</label>
+                            <input type="number" min="4" max="50" step="1" value="10" class="form-control form-control-sm" id="supertrendAtrPeriod">
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small" for="supertrendAtrMult">ATR Mult</label>
+                            <input type="number" min="1" max="6" step="0.1" value="3.0" class="form-control form-control-sm" id="supertrendAtrMult">
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-hover align-middle mb-0">
+                            <thead>
+                            <tr>
+                                <th>Ticker</th>
+                                <th>Trend</th>
+                                <th>Price</th>
+                                <th>Anchored VWAP</th>
+                                <th>Entry</th>
+                                <th>Stop</th>
+                                <th>Target</th>
+                                <th>Catalyst / Notes</th>
+                                <th>Conf.</th>
+                            </tr>
+                            </thead>
+                            <tbody id="supertrend-table-body">
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-3">
+                                    Press “Run Supertrend Radar” to populate ideas.
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-3" id="zigzag-card">
+                <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div>
+                        <span class="badge bg-primary-subtle text-primary">ZigZag Swing Radar</span>
+                        <span class="text-muted small ms-2">Parameters: Deviation 5%, Backstep 5 bars</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-3">
+                        <small class="text-muted" id="zigzagLastRun">Last run: —</small>
+                        <button class="btn btn-outline-light btn-sm" id="runZigzagBtn" type="button">
+                            Run ZigZag Radar
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3" id="zigzagStatus">
+                        Tracks fresh swing highs/lows (ZigZag) and overlays catalysts. Use alongside Supertrend for confirmation.
+                    </p>
+                    <div class="row g-2 mb-3">
+                        <div class="col-12 col-md-8">
+                            <label class="form-label small" for="zigzagTickersInput">Tickers (comma separated)</label>
+                            <input type="text" class="form-control form-control-sm" id="zigzagTickersInput"
+                                   value="SPY, QQQ, NVDA, TSLA, MSFT"
+                                   placeholder="SPY, QQQ, …">
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small" for="zigzagDeviation">Deviation %</label>
+                            <input type="number" min="1" max="15" step="0.5" value="5" class="form-control form-control-sm" id="zigzagDeviation">
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small" for="zigzagBackstep">Backstep</label>
+                            <input type="number" min="2" max="20" step="1" value="5" class="form-control form-control-sm" id="zigzagBackstep">
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-hover align-middle mb-0">
+                            <thead>
+                            <tr>
+                                <th>Ticker</th>
+                                <th>Direction</th>
+                                <th>Pivot Price</th>
+                                <th>Anchored VWAP</th>
+                                <th>Entry</th>
+                                <th>Stop</th>
+                                <th>Target</th>
+                                <th>Catalyst / Notes</th>
+                                <th>Conf.</th>
+                            </tr>
+                            </thead>
+                            <tbody id="zigzag-table-body">
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-3">
+                                    Press “Run ZigZag Radar” to see swing signals.
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-3" id="daytrade-card">
+                <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div>
+                        <span class="badge bg-danger-subtle text-danger">Day-Trade Radar</span>
+                        <span class="text-muted small ms-2">Intraday Supertrend + ZigZag (default 15m)</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-3">
+                        <small class="text-muted" id="daytradeLastRun">Last run: —</small>
+                        <button class="btn btn-outline-light btn-sm" id="runDaytradeBtn" type="button">Run Day-Trade Radar</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3" id="daytradeStatus">
+                        Uses intraday yahoo! finance data (1m/5m/15m) with tighter Supertrend (ATR 7 x2) and ZigZag (2.5% / 4 bars). Adjust inputs below to fit your style.
+                    </p>
+                    <div class="row g-2 mb-3">
+                        <div class="col-12 col-lg-4">
+                            <label class="form-label small" for="daytradeTickersInput">Tickers</label>
+                            <input type="text" class="form-control form-control-sm" id="daytradeTickersInput"
+                                   value="SPY, QQQ, NVDA, TSLA, MSFT">
+                        </div>
+                        <div class="col-6 col-lg-2">
+                            <label class="form-label small" for="daytradeInterval">Interval</label>
+                            <select class="form-select form-select-sm" id="daytradeInterval">
+                                <option value="1m">1m</option>
+                                <option value="5m">5m</option>
+                                <option value="15m" selected>15m</option>
+                            </select>
+                        </div>
+                        <div class="col-3 col-lg-1">
+                            <label class="form-label small" for="daytradeAtrPeriod">ATR</label>
+                            <input type="number" min="4" max="30" step="1" value="7" class="form-control form-control-sm" id="daytradeAtrPeriod">
+                        </div>
+                        <div class="col-3 col-lg-1">
+                            <label class="form-label small" for="daytradeAtrMult">Mult</label>
+                            <input type="number" min="1" max="4" step="0.1" value="2.0" class="form-control form-control-sm" id="daytradeAtrMult">
+                        </div>
+                        <div class="col-3 col-lg-1">
+                            <label class="form-label small" for="daytradeDeviation">Dev%</label>
+                            <input type="number" min="1" max="10" step="0.5" value="2.5" class="form-control form-control-sm" id="daytradeDeviation">
+                        </div>
+                        <div class="col-3 col-lg-1">
+                            <label class="form-label small" for="daytradeBackstep">Backstep</label>
+                            <input type="number" min="2" max="15" step="1" value="4" class="form-control form-control-sm" id="daytradeBackstep">
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-hover align-middle mb-0">
+                            <thead>
+                            <tr>
+                                <th>Ticker</th>
+                                <th>Price</th>
+                                <th>Supertrend</th>
+                                <th>ZigZag</th>
+                                <th>Session VWAP</th>
+                                <th>Notes</th>
+                            </tr>
+                            </thead>
+                            <tbody id="daytrade-table-body">
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-3">Press “Run Day-Trade Radar” to load intraday signals.</td>
+                            </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -1998,6 +2288,574 @@
         `;
     }
 
+    // ------------- Economic calendar logic -------------
+    const econRangeSelect = document.getElementById('econRangeSelect');
+    const econCurrencyInput = document.getElementById('econCurrencyInput');
+    const econTzSelect = document.getElementById('econTzSelect');
+    const econImpactChecks = document.querySelectorAll('input[data-econ-impact]');
+    const econRefreshBtn = document.getElementById('econRefreshBtn');
+    const econStatus = document.getElementById('econStatus');
+    const econTableBody = document.getElementById('econ-table-body');
+    const econImpactClassMap = {
+        high: 'badge bg-danger-subtle text-danger',
+        medium: 'badge bg-warning-subtle text-warning',
+        low: 'badge bg-success-subtle text-success'
+    };
+    let econCurrencyDebounce = null;
+
+    function getSelectedImpacts() {
+        if (!econImpactChecks || !econImpactChecks.length) return [];
+        return Array.from(econImpactChecks)
+            .filter(check => check.checked && check.dataset.econImpact)
+            .map(check => check.dataset.econImpact.toLowerCase());
+    }
+
+    function getSelectedCurrencies() {
+        if (!econCurrencyInput) return [];
+        return (econCurrencyInput.value || '')
+            .split(/[, ]+/)
+            .map(token => token.trim().toUpperCase())
+            .filter(Boolean)
+            .slice(0, 10);
+    }
+
+    function setEconStatus(message, isError = false) {
+        if (!econStatus) return;
+        econStatus.textContent = message;
+        econStatus.classList.toggle('text-danger', isError);
+        econStatus.classList.toggle('text-muted', !isError);
+    }
+
+    function buildEconQueryParams() {
+        const params = new URLSearchParams();
+        const rangeValue = econRangeSelect?.value || 'week';
+        if (rangeValue === 'custom') {
+            params.set('range', 'custom');
+            params.set('days', '10');
+        } else {
+            params.set('range', rangeValue);
+        }
+        const impacts = getSelectedImpacts();
+        if (impacts.length) params.set('impacts', impacts.join(','));
+        const currencies = getSelectedCurrencies();
+        if (currencies.length) params.set('currencies', currencies.join(','));
+        if (econTzSelect) {
+            params.set('tz_offset', econTzSelect.value || '0');
+        }
+        params.set('limit', '120');
+        return params;
+    }
+
+    function formatEconValue(value, unit) {
+        if (value === null || value === undefined || value === '') return '—';
+        const text = typeof value === 'number' ? value.toString() : String(value);
+        if (unit && !text.includes(unit)) {
+            return `${text} ${unit}`;
+        }
+        return text;
+    }
+
+    function formatRelativeTime(epochMs) {
+        if (!epochMs) return '';
+        const diffMs = epochMs - Date.now();
+        const absMinutes = Math.max(1, Math.round(Math.abs(diffMs) / 60000));
+        let label;
+        if (absMinutes < 60) {
+            label = `${absMinutes}m`;
+        } else if (absMinutes < 60 * 24) {
+            label = `${Math.round(absMinutes / 60)}h`;
+        } else {
+            label = `${Math.round(absMinutes / (60 * 24))}d`;
+        }
+        return diffMs >= 0 ? `in ${label}` : `${label} ago`;
+    }
+
+    function formatDateDisplay(value, options = {}) {
+        if (!value) return '';
+        try {
+            const date = new Date(value);
+            const formatterOptions = Object.assign({
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            }, options);
+            return date.toLocaleString([], formatterOptions);
+        } catch (err) {
+            return value;
+        }
+    }
+
+    function renderEconTable(events) {
+        if (!econTableBody) return;
+        if (!events.length) {
+            econTableBody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-3">
+                        No events match the current filters.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        econTableBody.innerHTML = '';
+        events.forEach(event => {
+            const fallbackLocal = formatDateDisplay(event.time_local);
+            const fallbackUtc = formatDateDisplay(event.time_utc, { timeZone: 'UTC' });
+            const localLabel = event.time_local_label || fallbackLocal || '—';
+            const utcLabel = event.time_utc_label || (fallbackUtc ? `${fallbackUtc} UTC` : '');
+            const impactKey = (event.impact || '').toLowerCase();
+            const impactClass = econImpactClassMap[impactKey] || 'badge bg-secondary-subtle text-secondary';
+            const impactLabel = impactKey ? impactKey.toUpperCase() : 'N/A';
+            const actualText = formatEconValue(event.actual, event.unit);
+            const forecastText = formatEconValue(event.forecast, event.unit);
+            const previousText = formatEconValue(event.previous, event.unit);
+            const status = event.status || 'unknown';
+            const statusBadgeClass = status === 'future'
+                ? 'badge bg-info-subtle text-info'
+                : status === 'past'
+                    ? 'badge bg-secondary-subtle text-secondary'
+                    : 'badge bg-light text-dark';
+            const statusLabel = status === 'future'
+                ? 'Upcoming'
+                : status === 'past'
+                    ? 'Released'
+                    : 'TBD';
+            const relative = formatRelativeTime(event.time_epoch_ms);
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>
+                    <div class="fw-semibold">${localLabel}</div>
+                    <div class="small text-muted">${utcLabel || ''}</div>
+                </td>
+                <td>
+                    <span class="${impactClass} econ-impact-pill">${impactLabel}</span>
+                    <div class="small text-muted mt-1">${event.currency || '—'}</div>
+                </td>
+                <td>
+                    <div class="event-title mb-1">${event.event || '—'}</div>
+                    <div class="small text-muted">${event.country || ''}</div>
+                </td>
+                <td>
+                    <div><strong>Actual:</strong> ${actualText}</div>
+                    <div class="small text-muted">Forecast: ${forecastText} • Previous: ${previousText}</div>
+                </td>
+                <td>
+                    <span class="${statusBadgeClass}">${statusLabel}</span>
+                    ${relative ? `<div class="small text-muted mt-1">${relative}</div>` : ''}
+                </td>
+            `;
+            econTableBody.appendChild(row);
+        });
+    }
+
+    async function fetchEconCalendar() {
+        if (!econTableBody) return;
+        const params = buildEconQueryParams();
+        econTableBody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center text-muted py-3">
+                    Loading macro events…
+                </td>
+            </tr>
+        `;
+        setEconStatus('Loading macro events…');
+        try {
+            const resp = await fetch(`/api/econ/calendar?${params.toString()}`);
+            const result = await resp.json();
+            if (!result.success) {
+                setEconStatus(result.error || 'Unable to load the economic calendar.', true);
+                econTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-3">
+                            ${result.error || 'Unable to load the economic calendar.'}
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            const events = Array.isArray(result.data) ? result.data : [];
+            renderEconTable(events);
+            const meta = result.meta || {};
+            const metaRange = meta.range || (econRangeSelect?.value || 'week');
+            const sourceLabel = (meta.source || '').toString().toUpperCase();
+            const warningsList = Array.isArray(meta.warnings) ? meta.warnings.filter(Boolean) : [];
+            const warningText = warningsList.length ? ` • ${warningsList.join(' | ')}` : '';
+            const sourceText = sourceLabel ? ` • Source: ${sourceLabel}` : '';
+            setEconStatus(`Showing ${events.length} event(s) • ${metaRange}${sourceText}${warningText}`);
+        } catch (err) {
+            console.error('Economic calendar error', err);
+            setEconStatus('Failed to load the economic calendar.', true);
+            econTableBody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-3">
+                        Failed to load macro events. Retry in a moment.
+                    </td>
+                </tr>
+            `;
+        }
+    }
+
+    econRefreshBtn?.addEventListener('click', fetchEconCalendar);
+    econRangeSelect?.addEventListener('change', fetchEconCalendar);
+    econTzSelect?.addEventListener('change', fetchEconCalendar);
+    econImpactChecks.forEach(check => {
+        check.addEventListener('change', fetchEconCalendar);
+    });
+    econCurrencyInput?.addEventListener('input', () => {
+        clearTimeout(econCurrencyDebounce);
+        econCurrencyDebounce = setTimeout(fetchEconCalendar, 600);
+    });
+
+    if (econTableBody) {
+        fetchEconCalendar();
+    }
+
+    const runSupertrendBtn = document.getElementById('runSupertrendBtn');
+    const supertrendStatus = document.getElementById('supertrendStatus');
+    const supertrendTableBody = document.getElementById('supertrend-table-body');
+    const supertrendLastRun = document.getElementById('supertrendLastRun');
+    const supertrendTickersInput = document.getElementById('supertrendTickersInput');
+    const supertrendAtrPeriodInput = document.getElementById('supertrendAtrPeriod');
+    const supertrendAtrMultInput = document.getElementById('supertrendAtrMult');
+
+    function renderSupertrendRows(rows) {
+        if (!supertrendTableBody) return;
+        if (!rows.length) {
+            supertrendTableBody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-3">
+                        No qualifying Supertrend ideas right now.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        supertrendTableBody.innerHTML = '';
+        rows.forEach(row => {
+            const trendUp = row.trend_value === 1 || row.trend === 'Uptrend';
+            const trendBadge = trendUp
+                ? '<span class="badge bg-success-subtle text-success">Uptrend</span>'
+                : '<span class="badge bg-danger-subtle text-danger">Downtrend</span>';
+            const price = typeof row.close === 'number' ? `$${row.close.toFixed(2)}` : '—';
+            const vwapVal = typeof row.anchored_vwap === 'number'
+                ? `$${row.anchored_vwap.toFixed(2)}`
+                : '—';
+            const vwapDelta = typeof row.distance_from_vwap_pct === 'number'
+                ? `${row.distance_from_vwap_pct >= 0 ? '+' : ''}${row.distance_from_vwap_pct.toFixed(2)}%`
+                : '';
+            const vwapCell = vwapDelta ? `${vwapVal}<div class="small text-muted">${vwapDelta}</div>` : vwapVal;
+            const entry = typeof row.ai_entry === 'number'
+                ? `$${row.ai_entry.toFixed(2)}`
+                : price;
+            const stop = typeof row.ai_stop === 'number'
+                ? `$${row.ai_stop.toFixed(2)}`
+                : (row.supertrend_support ? `$${Number(row.supertrend_support).toFixed(2)}` : '—');
+            const target = typeof row.ai_target === 'number'
+                ? `$${row.ai_target.toFixed(2)}`
+                : '—';
+            const catalyst = row.ai_catalyst || row.ai_notes || 'No AI context available.';
+            const confidence = row.ai_confidence ? `${row.ai_confidence}/5` : '—';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><span class="ticker-chip">${row.ticker || ''}</span></td>
+                <td>${trendBadge}${row.buy_signal ? '<div class="small text-success">Fresh flip</div>' : ''}</td>
+                <td>${price}</td>
+                <td>${vwapCell}</td>
+                <td>${entry}</td>
+                <td>${stop}</td>
+                <td>${target}</td>
+                <td>
+                    <div class="small">${catalyst}</div>
+                </td>
+                <td>${confidence}</td>
+            `;
+            supertrendTableBody.appendChild(tr);
+        });
+    }
+
+    async function fetchSupertrendRadar() {
+        if (!runSupertrendBtn) return;
+        runSupertrendBtn.disabled = true;
+        if (supertrendStatus) {
+            supertrendStatus.textContent = 'Running Supertrend radar…';
+        }
+        try {
+            const resp = await fetch('/api/supertrend/radar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tickers: supertrendTickersInput?.value || '',
+                    atr_period: supertrendAtrPeriodInput?.value || undefined,
+                    atr_multiplier: supertrendAtrMultInput?.value || undefined
+                })
+            });
+            const result = await resp.json();
+            if (!result.success) {
+                if (supertrendStatus) {
+                    supertrendStatus.textContent = result.error || 'Supertrend radar failed.';
+                }
+                return;
+            }
+            const signals = (result.data && result.data.signals) || [];
+            renderSupertrendRows(signals);
+            const meta = (result.data && result.data.meta) || {};
+            if (supertrendLastRun) {
+                supertrendLastRun.textContent = 'Last run: ' + new Date().toLocaleTimeString();
+            }
+            if (supertrendStatus) {
+                let text = meta.generated_at ? `Generated at ${meta.generated_at}` : 'Supertrend radar complete.';
+                if (Array.isArray(meta.tickers)) {
+                    text += ` • Tickers: ${meta.tickers.join(', ')}`;
+                }
+                if (meta.settings) {
+                    text += ` • ATR ${meta.settings.atr_period}/${meta.settings.atr_multiplier}`;
+                }
+                if (meta.warnings && meta.warnings.length) {
+                    text += ' • ' + meta.warnings.join(' | ');
+                }
+                supertrendStatus.textContent = text;
+            }
+        } catch (err) {
+            console.error('Supertrend radar error', err);
+            if (supertrendStatus) {
+                supertrendStatus.textContent = 'Failed to run radar. Try again shortly.';
+            }
+        } finally {
+            runSupertrendBtn.disabled = false;
+        }
+    }
+
+    runSupertrendBtn?.addEventListener('click', fetchSupertrendRadar);
+
+    const runZigzagBtn = document.getElementById('runZigzagBtn');
+    const zigzagStatus = document.getElementById('zigzagStatus');
+    const zigzagTableBody = document.getElementById('zigzag-table-body');
+    const zigzagLastRun = document.getElementById('zigzagLastRun');
+    const zigzagTickersInput = document.getElementById('zigzagTickersInput');
+    const zigzagDeviationInput = document.getElementById('zigzagDeviation');
+    const zigzagBackstepInput = document.getElementById('zigzagBackstep');
+
+    function renderZigzagRows(rows) {
+        if (!zigzagTableBody) return;
+        if (!rows.length) {
+            zigzagTableBody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-3">
+                        No ZigZag swings triggered at the moment.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        zigzagTableBody.innerHTML = '';
+        rows.forEach(row => {
+            const dir = row.direction || (row.ai_direction || '');
+            const isBuy = (dir || '').toLowerCase().startsWith('buy');
+            const dirBadge = isBuy
+                ? '<span class="badge bg-success-subtle text-success">Buy</span>'
+                : '<span class="badge bg-danger-subtle text-danger">Sell</span>';
+            const pivotPrice = row.pivot_price ? `$${Number(row.pivot_price).toFixed(2)}` : '—';
+            const vwapVal = typeof row.anchored_vwap === 'number'
+                ? `$${row.anchored_vwap.toFixed(2)}`
+                : '—';
+            const vwapDelta = typeof row.distance_from_vwap_pct === 'number'
+                ? `${row.distance_from_vwap_pct >= 0 ? '+' : ''}${row.distance_from_vwap_pct.toFixed(2)}%`
+                : '';
+            const vwapCell = vwapDelta ? `${vwapVal}<div class="small text-muted">${vwapDelta}</div>` : vwapVal;
+            const entry = typeof row.ai_entry === 'number'
+                ? `$${row.ai_entry.toFixed(2)}`
+                : pivotPrice;
+            const stop = typeof row.ai_stop === 'number'
+                ? `$${row.ai_stop.toFixed(2)}`
+                : (row.prior_pivot_price ? `$${Number(row.prior_pivot_price).toFixed(2)}` : '—');
+            const target = typeof row.ai_target === 'number'
+                ? `$${row.ai_target.toFixed(2)}`
+                : '—';
+            const catalyst = row.ai_catalyst || row.ai_notes || 'No AI commentary available.';
+            const confidence = row.ai_confidence ? `${row.ai_confidence}/5` : '—';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><span class="ticker-chip">${row.ticker || ''}</span></td>
+                <td>${dirBadge}<div class="small text-muted">${row.pivot_time || ''}</div></td>
+                <td>${pivotPrice}</td>
+                <td>${vwapCell}</td>
+                <td>${entry}</td>
+                <td>${stop}</td>
+                <td>${target}</td>
+                <td><div class="small">${catalyst}</div></td>
+                <td>${confidence}</td>
+            `;
+            zigzagTableBody.appendChild(tr);
+        });
+    }
+
+    async function fetchZigzagRadar() {
+        if (!runZigzagBtn) return;
+        runZigzagBtn.disabled = true;
+        if (zigzagStatus) zigzagStatus.textContent = 'Running ZigZag radar…';
+        try {
+            const resp = await fetch('/api/zigzag/radar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tickers: zigzagTickersInput?.value || '',
+                    deviation: zigzagDeviationInput?.value || undefined,
+                    backstep: zigzagBackstepInput?.value || undefined
+                })
+            });
+            const result = await resp.json();
+            if (!result.success) {
+                if (zigzagStatus) zigzagStatus.textContent = result.error || 'ZigZag radar failed.';
+                return;
+            }
+            const signals = (result.data && result.data.signals) || [];
+            renderZigzagRows(signals);
+            const meta = (result.data && result.data.meta) || {};
+            if (zigzagLastRun) {
+                zigzagLastRun.textContent = 'Last run: ' + new Date().toLocaleTimeString();
+            }
+            if (zigzagStatus) {
+                let text = meta.generated_at ? `Generated at ${meta.generated_at}` : 'ZigZag radar complete.';
+                if (meta.settings) {
+                    text += ` • Deviation ${meta.settings.deviation}% | Backstep ${meta.settings.backstep} bars`;
+                }
+                if (Array.isArray(meta.tickers)) {
+                    text += ` • Tickers: ${meta.tickers.join(', ')}`;
+                }
+                if (meta.warnings && meta.warnings.length) {
+                    text += ' • ' + meta.warnings.join(' | ');
+                }
+                zigzagStatus.textContent = text;
+            }
+        } catch (err) {
+            console.error('ZigZag radar error', err);
+            if (zigzagStatus) zigzagStatus.textContent = 'Failed to run ZigZag radar. Try again.';
+        } finally {
+            runZigzagBtn.disabled = false;
+        }
+    }
+
+    runZigzagBtn?.addEventListener('click', fetchZigzagRadar);
+
+    const runDaytradeBtn = document.getElementById('runDaytradeBtn');
+    const daytradeStatus = document.getElementById('daytradeStatus');
+    const daytradeTableBody = document.getElementById('daytrade-table-body');
+    const daytradeLastRun = document.getElementById('daytradeLastRun');
+    const daytradeTickersInput = document.getElementById('daytradeTickersInput');
+    const daytradeIntervalSelect = document.getElementById('daytradeInterval');
+    const daytradeAtrPeriodInput = document.getElementById('daytradeAtrPeriod');
+    const daytradeAtrMultInput = document.getElementById('daytradeAtrMult');
+    const daytradeDeviationInput = document.getElementById('daytradeDeviation');
+    const daytradeBackstepInput = document.getElementById('daytradeBackstep');
+
+    function renderDaytradeRows(rows) {
+        if (!daytradeTableBody) return;
+        if (!rows.length) {
+            daytradeTableBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-3">
+                        No intraday signals at the moment. Try a different interval or parameters.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        daytradeTableBody.innerHTML = '';
+        rows.forEach(row => {
+            const price = typeof row.price === 'number' ? `$${row.price.toFixed(2)}` : '—';
+            const sessionVwap = typeof row.session_vwap === 'number'
+                ? `$${row.session_vwap.toFixed(2)}`
+                : '—';
+            const sessionDelta = typeof row.session_vwap_delta_pct === 'number'
+                ? `${row.session_vwap_delta_pct >= 0 ? '+' : ''}${row.session_vwap_delta_pct.toFixed(2)}%`
+                : '';
+            const sessionCell = sessionDelta
+                ? `${sessionVwap}<div class="small text-muted">${sessionDelta}</div>`
+                : sessionVwap;
+            const st = row.supertrend || {};
+            const stTrend = st.trend || 'n/a';
+            const stBadgeClass = (stTrend || '').toLowerCase().includes('down')
+                ? 'badge bg-danger-subtle text-danger'
+                : 'badge bg-success-subtle text-success';
+            const stBadge = `<span class="${stBadgeClass}">${stTrend}</span>`;
+            const stNotes = st.buy_signal ? '<div class="small text-success">Fresh flip</div>' : '';
+            const zz = row.zigzag || {};
+            const zzDir = zz.direction || 'n/a';
+            const zzBadgeClass = (zzDir || '').toLowerCase().includes('sell')
+                ? 'badge bg-danger-subtle text-danger'
+                : 'badge bg-success-subtle text-success';
+            const zzBadge = `<span class="${zzBadgeClass}">${zzDir}</span>`;
+            const notes = [
+                stNotes,
+                zz.change_from_pivot ? `Δ from pivot ${zz.change_from_pivot_pct || ''}%` : '',
+                row.session_start ? `Session start ${row.session_start}` : ''
+            ].filter(Boolean).join('<br>') || '—';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><span class="ticker-chip">${row.ticker || ''}</span></td>
+                <td>${price}</td>
+                <td>${stBadge}</td>
+                <td>${zzBadge}</td>
+                <td>${sessionCell}</td>
+                <td class="small">${notes}</td>
+            `;
+            daytradeTableBody.appendChild(tr);
+        });
+    }
+
+    async function fetchDaytradeRadar() {
+        if (!runDaytradeBtn) return;
+        runDaytradeBtn.disabled = true;
+        if (daytradeStatus) daytradeStatus.textContent = 'Running day-trade radar…';
+        try {
+            const resp = await fetch('/api/daytrade/radar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tickers: daytradeTickersInput?.value || '',
+                    interval: daytradeIntervalSelect?.value || '15m',
+                    atr_period: daytradeAtrPeriodInput?.value || undefined,
+                    atr_multiplier: daytradeAtrMultInput?.value || undefined,
+                    deviation: daytradeDeviationInput?.value || undefined,
+                    backstep: daytradeBackstepInput?.value || undefined
+                })
+            });
+            const result = await resp.json();
+            if (!result.success) {
+                if (daytradeStatus) daytradeStatus.textContent = result.error || 'Day-trade radar failed.';
+                return;
+            }
+            const signals = (result.data && result.data.signals) || [];
+            renderDaytradeRows(signals);
+            const meta = (result.data && result.data.meta) || {};
+            if (daytradeLastRun) daytradeLastRun.textContent = 'Last run: ' + new Date().toLocaleTimeString();
+            if (daytradeStatus) {
+                let text = `Interval ${meta.interval || '15m'}`;
+                if (meta.settings) {
+                    text += ` • ATR ${meta.settings.atr_period}/${meta.settings.atr_multiplier}`;
+                    text += ` • ZigZag ${meta.settings.zigzag_deviation}%/${meta.settings.zigzag_backstep} bars`;
+                }
+                if (Array.isArray(meta.tickers)) {
+                    text += ` • Tickers: ${meta.tickers.join(', ')}`;
+                }
+                if (meta.warnings && meta.warnings.length) {
+                    text += ' • ' + meta.warnings.join(' | ');
+                }
+                daytradeStatus.textContent = text;
+            }
+        } catch (err) {
+            console.error('Daytrade radar error', err);
+            if (daytradeStatus) daytradeStatus.textContent = 'Failed to run day-trade radar. Try again.';
+        } finally {
+            runDaytradeBtn.disabled = false;
+        }
+    }
+
+    runDaytradeBtn?.addEventListener('click', fetchDaytradeRadar);
+
     // ------------- History tab logic -------------
     const historyTab = document.getElementById('history-tab');
     const historySearchInput = document.getElementById('historySearch');
@@ -2506,9 +3364,18 @@
             const ticker = r.ticker || '';
             const alerts = r.alerts || 0;
             const lastProfile = r.last_profile || '';
+            const lastModelVariant = (r.last_model_variant || '').toString().toLowerCase();
+            const lastModelRaw = r.last_model || '';
+            const modelLabel = lastModelVariant
+                ? (MODEL_LABELS[lastModelVariant] || lastModelRaw || lastModelVariant)
+                : (lastModelRaw || '');
+            const profileCell = modelLabel
+                ? `${lastProfile}<div class="text-muted small">${modelLabel}</div>`
+                : lastProfile;
             const lastTier = r.last_tier || '';
             const lastEntryNum = coerceNumber(r.last_entry);
             const lastEntry = lastEntryNum === null ? '-' : lastEntryNum.toFixed(2);
+            const lastAiEntryNum = coerceNumber(r.last_ai_entry);
             const aiTargetVal = r.last_ai_target_price;
             const aiGainVal = r.last_ai_potential_gain_pct;
             const currentPriceVal = coerceNumber(r.current_price);
@@ -2532,6 +3399,10 @@
             const pctCell = pctForDisplay === null
                 ? '-'
                 : `${pctForDisplay >= 0 ? '+' : ''}${pctForDisplay.toFixed(2)}%`;
+            const entryPrimary = lastEntry === '-' ? '-' : '$' + lastEntry;
+            const entrySecondary = lastAiEntryNum === null
+                ? ''
+                : `<div class="text-muted small">AI $${lastAiEntryNum.toFixed(2)}</div>`;
 
             const tr = document.createElement('tr');
             tr.classList.add('history-table-row');
@@ -2539,9 +3410,9 @@
             tr.innerHTML = `
                 <td><span class="ticker-chip">${ticker}</span></td>
                 <td>${alerts}</td>
-                <td>${lastProfile}</td>
+                <td>${profileCell}</td>
                 <td>${lastTier}</td>
-                <td>${lastEntry === '-' ? '-' : '$' + lastEntry}</td>
+                <td>${entryPrimary}${entrySecondary}</td>
                 <td>${aiTarget === '-' ? '-' : '$' + aiTarget}</td>
                 <td>${aiGain}</td>
                 <td>${priceCell}</td>
@@ -2620,8 +3491,10 @@
                 const row = historyRowLookup.get(ticker);
                 if (!row) continue;
                 row.current_price = priceVal;
-                const entryVal = coerceNumber(row.last_entry);
-                if (priceVal !== null && entryVal) {
+                let entryVal = coerceNumber(row.last_entry);
+                if (entryVal === null) entryVal = coerceNumber(row.last_scan_price);
+                if (entryVal === null) entryVal = coerceNumber(row.last_ai_entry);
+                if (priceVal !== null && entryVal !== null && entryVal !== 0) {
                     const pct = ((priceVal - entryVal) / entryVal) * 100;
                     row.current_change_pct = Number(pct.toFixed(2));
                 } else {
