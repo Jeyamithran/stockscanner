@@ -527,6 +527,82 @@ def compute_anchored_vwap(highs, lows, closes, volumes, start_idx: int, end_idx:
     return cumulative_price / cumulative_volume
 
 
+def fetch_intraday_candles_yf(symbol: str, interval: str = "15m") -> Optional[Dict[str, Any]]:
+    if yf is None or pd is None:
+        return None
+    interval = interval.lower()
+    if interval not in {"1m", "5m", "15m"}:
+        interval = "15m"
+    period_map = {
+        "1m": "5d",
+        "5m": "60d",
+        "15m": "60d"
+    }
+    period = period_map.get(interval, "60d")
+    try:
+        df = yf.download(
+            symbol,
+            period=period,
+            interval=interval,
+            auto_adjust=True,
+            progress=False
+        )
+    except Exception as exc:
+        logging.error(f"Intraday yfinance error for {symbol}: {exc}")
+        return None
+    if df is None or df.empty:
+        return None
+    df = df.dropna()
+    if df.empty:
+        return None
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    opens = df["Open"].tolist()
+    highs = df["High"].tolist()
+    lows = df["Low"].tolist()
+    closes = df["Close"].tolist()
+    volumes = df["Volume"].fillna(0).tolist()
+    timestamps = [int(ts.timestamp()) for ts in df.index.to_pydatetime()]
+    return {
+        "o": opens,
+        "h": highs,
+        "l": lows,
+        "c": closes,
+        "v": volumes,
+        "t": timestamps,
+        "s": "ok"
+    }
+
+
+def compute_session_vwap(candles: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[str]]:
+    timestamps = candles.get("t") or []
+    closes = candles.get("c") or []
+    highs = candles.get("h") or []
+    lows = candles.get("l") or []
+    volumes = candles.get("v") or []
+    if not timestamps:
+        return None, None, None
+    last_ts = int(timestamps[-1])
+    last_day = datetime.utcfromtimestamp(last_ts).date()
+    start_idx = 0
+    for idx in range(len(timestamps) - 1, -1, -1):
+        ts = datetime.utcfromtimestamp(int(timestamps[idx]))
+        if ts.date() != last_day:
+            start_idx = idx + 1
+            break
+    else:
+        start_idx = 0
+    if start_idx >= len(timestamps):
+        start_idx = 0
+    vwap = compute_anchored_vwap(highs, lows, closes, volumes, start_idx, len(timestamps) - 1)
+    if vwap is None:
+        return None, None, None
+    last_close = float(closes[-1])
+    delta = ((last_close - vwap) / vwap * 100.0) if vwap else None
+    session_start_iso = datetime.utcfromtimestamp(int(timestamps[start_idx])).replace(microsecond=0).isoformat() + "Z"
+    return round(vwap, 4), (round(delta, 2) if delta is not None else None), session_start_iso
+
+
 def _rma(values: List[float], period: int) -> List[Optional[float]]:
     if len(values) < period:
         return [None] * len(values)
@@ -680,6 +756,7 @@ def _compute_zigzag(symbol: str, candles: Dict[str, Any], deviation: float = 5.0
     highs = candles.get("h") or []
     lows = candles.get("l") or []
     timestamps = candles.get("t") or []
+    volumes = candles.get("v") or []
     length = min(len(closes), len(highs), len(lows), len(timestamps))
     if length < backstep + 5:
         return None
@@ -731,7 +808,8 @@ def _compute_zigzag(symbol: str, candles: Dict[str, Any], deviation: float = 5.0
     close = float(closes[-1])
     change_from_pivot = ((close - latest["price"]) / latest["price"] * 100.0) if latest["price"] else 0.0
     anchor_idx = max(0, min(length - 1, latest["index"]))
-    anchored_vwap = compute_anchored_vwap(highs, lows, closes, volumes, anchor_idx, length - 1)
+    anchor_end_idx = min(length - 1, len(volumes) - 1 if volumes else length - 1)
+    anchored_vwap = compute_anchored_vwap(highs, lows, closes, volumes, anchor_idx, anchor_end_idx)
     vwap_distance = None
     if anchored_vwap:
         vwap_distance = round(((close - anchored_vwap) / anchored_vwap) * 100.0, 2)
@@ -2207,10 +2285,14 @@ def api_daytrade_radar():
         if not candles:
             warnings.append(f"No intraday data for {symbol}.")
             continue
+        closes = candles.get("c") or []
+        if not closes:
+            warnings.append(f"Missing close prices for {symbol}.")
+            continue
         st = _compute_supertrend(symbol, candles, period=atr_period, multiplier=atr_mult)
         zz = _compute_zigzag(symbol, candles, deviation=deviation, backstep=backstep)
         session_vwap, session_delta, session_start = compute_session_vwap(candles)
-        last_close = candles.get("c", [])[-1] if candles.get("c") else None
+        last_close = closes[-1]
         row = {
             "ticker": symbol,
             "price": round(float(last_close), 2) if last_close is not None else None,
@@ -2619,77 +2701,3 @@ def handle_unexpected_exception(error):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
-def fetch_intraday_candles_yf(symbol: str, interval: str = "15m") -> Optional[Dict[str, Any]]:
-    if yf is None or pd is None:
-        return None
-    interval = interval.lower()
-    if interval not in {"1m", "5m", "15m"}:
-        interval = "15m"
-    period_map = {
-        "1m": "5d",
-        "5m": "60d",
-        "15m": "60d"
-    }
-    period = period_map.get(interval, "60d")
-    try:
-        df = yf.download(
-            symbol,
-            period=period,
-            interval=interval,
-            auto_adjust=True,
-            progress=False
-        )
-    except Exception as exc:
-        logging.error(f"Intraday yfinance error for {symbol}: {exc}")
-        return None
-    if df is None or df.empty:
-        return None
-    df = df.dropna()
-    if df.empty:
-        return None
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    opens = df["Open"].tolist()
-    highs = df["High"].tolist()
-    lows = df["Low"].tolist()
-    closes = df["Close"].tolist()
-    volumes = df["Volume"].fillna(0).tolist()
-    timestamps = [int(ts.timestamp()) for ts in df.index.to_pydatetime()]
-    return {
-        "o": opens,
-        "h": highs,
-        "l": lows,
-        "c": closes,
-        "v": volumes,
-        "t": timestamps,
-        "s": "ok"
-    }
-
-
-def compute_session_vwap(candles: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[str]]:
-    timestamps = candles.get("t") or []
-    closes = candles.get("c") or []
-    highs = candles.get("h") or []
-    lows = candles.get("l") or []
-    volumes = candles.get("v") or []
-    if not timestamps:
-        return None, None, None
-    last_ts = int(timestamps[-1])
-    last_day = datetime.utcfromtimestamp(last_ts).date()
-    start_idx = 0
-    for idx in range(len(timestamps) - 1, -1, -1):
-        ts = datetime.utcfromtimestamp(int(timestamps[idx]))
-        if ts.date() != last_day:
-            start_idx = idx + 1
-            break
-    else:
-        start_idx = 0
-    if start_idx >= len(timestamps):
-        start_idx = 0
-    vwap = compute_anchored_vwap(highs, lows, closes, volumes, start_idx, len(timestamps) - 1)
-    if vwap is None:
-        return None, None, None
-    last_close = float(closes[-1])
-    delta = ((last_close - vwap) / vwap * 100.0) if vwap else None
-    session_start_iso = datetime.utcfromtimestamp(int(timestamps[start_idx])).replace(microsecond=0).isoformat() + "Z"
-    return round(vwap, 4), (round(delta, 2) if delta is not None else None), session_start_iso
