@@ -709,6 +709,78 @@ Execution rules:
 Return JSON only using this schema:
 """ + ZIGZAG_RESPONSE_SCHEMA
 
+
+TRADINGVIEW_SIGNAL_RESPONSE_SCHEMA = """
+{
+  "type": "object",
+  "required": [
+    "symbol",
+    "timeframe",
+    "as_of",
+    "signal",
+    "entry",
+    "stop",
+    "target",
+    "confidence",
+    "context",
+    "invalidations",
+    "risk_reward",
+    "holding_window"
+  ],
+  "properties": {
+    "symbol": { "type": "string" },
+    "timeframe": { "type": "string" },
+    "as_of": { "type": "string", "format": "date-time" },
+    "signal": { "type": "string", "enum": ["BUY", "SELL", "HOLD"] },
+    "entry": { "type": ["number", "null"] },
+    "stop": { "type": ["number", "null"] },
+    "target": { "type": ["number", "null"] },
+    "risk_reward": { "type": ["number", "null"], "minimum": 0 },
+    "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "position_size_pct": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+    "context": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 5,
+      "items": { "type": "string" }
+    },
+    "invalidations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": { "type": "string" }
+    },
+    "holding_window": { "type": "string", "description": "E.g., 'next 2 bars', 'rest of session'." },
+    "volatility_notes": { "type": ["string", "null"] },
+    "data_used": { "type": ["integer", "null"], "description": "Number of bars considered" },
+    "next_check_minutes": { "type": ["integer", "null"], "minimum": 1, "maximum": 600 }
+  },
+  "additionalProperties": false
+}
+"""
+
+
+TRADINGVIEW_SIGNAL_PROMPT = """
+SYSTEM
+You are the execution desk AI for a trader piping live OHLCV bars directly from TradingView. Use ONLY the provided bar stream (it already reflects exactly what the trader sees) to determine whether to BUY, SELL, or HOLD.
+
+Execution expectations:
+- Treat the JSON bars as the single source of truth—do not invent data or guess missing indicators.
+- Infer trend, momentum, volatility, and liquidity strictly from those numbers (range, RVOL, slope of closes, gap size, etc.).
+- Emphasize microstructure: higher lows vs lower highs, VWAP distance, spike reversals, compression/expansion, and whether momentum is weakening.
+- Reference the timeframe explicitly when describing catalysts or holding windows.
+- When signal = HOLD, still explain what would flip it to BUY/SELL (invalidations array).
+
+Risk + output discipline:
+1. Entry must sit within 0.2% of the latest close unless you specify a pullback level.
+2. Stops belong beyond the most recent pivot/invalidation; targets should reference measured move symmetry or session levels (previous H/L, VWAP deviations).
+3. Confidence is 0–100 and should reflect both structure quality and liquidity; HOLD setups top out at 40.
+4. Provide 3 concise context bullets summarizing structure/momentum/liquidity, and at least one invalidation statement.
+5. Keep JSON tight—no markdown, no prose outside the schema below.
+
+Return exactly one JSON object obeying the schema:
+""" + TRADINGVIEW_SIGNAL_RESPONSE_SCHEMA
+
 def select_scanner_prompt(profile: str, model: str) -> str:
     """Return the appropriate system prompt for the profile/model combo."""
     reasoning = (model == "sonar-reasoning-pro")

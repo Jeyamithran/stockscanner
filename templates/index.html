@@ -550,6 +550,12 @@
                 History
             </button>
         </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tv-tab" data-bs-toggle="tab" data-bs-target="#tv-pane"
+                    type="button" role="tab">
+                TradingView Signals
+            </button>
+        </li>
     </ul>
 
     <div class="tab-content">
@@ -1196,6 +1202,72 @@
             <div class="card mt-3" id="history-analysis-card">
                 <div class="card-body" id="history-analysis-body">
                     <p class="text-muted mb-0">Select any ticker in the history table to load a full AI breakdown.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===================== TRADINGVIEW TAB ===================== -->
+        <div class="tab-pane fade" id="tv-pane" role="tabpanel" aria-labelledby="tv-tab">
+            <div class="card mb-3">
+                <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+                    <div>
+                        <h5 class="mb-1">TradingView Relay</h5>
+                        <p class="text-muted small mb-0">
+                            Live OHLCV bars forwarded from your TradingView alerts. Pick a stream to see the AI signal generated from those exact candles.
+                        </p>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button class="btn btn-outline-light btn-sm" type="button" id="tvRefreshBtn">
+                            Refresh Streams
+                        </button>
+                        <button class="btn btn-outline-light btn-sm" type="button" id="tvDetailRefreshBtn" disabled>
+                            Refresh Selected
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12 col-lg-5">
+                    <div class="card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-0">Active Streams</h6>
+                                <small class="text-muted" id="tvStreamsStatus">No webhook data yet.</small>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-dark table-hover align-middle mb-0">
+                                    <thead>
+                                    <tr>
+                                        <th>Ticker</th>
+                                        <th>Last Price</th>
+                                        <th>Bars</th>
+                                        <th>Signal</th>
+                                        <th>Updated</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="tvStreamsBody">
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted py-3">
+                                            Waiting for TradingView webhook data.
+                                        </td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-lg-7">
+                    <div class="card h-100" id="tvSignalCard">
+                        <div class="card-body">
+                            <p class="text-center text-muted mb-0">
+                                Select a stream on the left to load its latest AI decision packet.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2855,6 +2927,320 @@
     }
 
     runDaytradeBtn?.addEventListener('click', fetchDaytradeRadar);
+
+    // ------------- TradingView relay tab logic -------------
+    const tvTab = document.getElementById('tv-tab');
+    const tvRefreshBtn = document.getElementById('tvRefreshBtn');
+    const tvDetailRefreshBtn = document.getElementById('tvDetailRefreshBtn');
+    const tvStreamsBody = document.getElementById('tvStreamsBody');
+    const tvSignalCard = document.getElementById('tvSignalCard');
+    const tvStreamsStatus = document.getElementById('tvStreamsStatus');
+
+    let tvStreams = [];
+    let tvStreamsLoading = false;
+    let tvSignalLoading = false;
+    let tvActiveStream = null;
+    let tvActiveStreamKey = '';
+
+    function getTvStreamKey(symbol, timeframe) {
+        return `${(symbol || '').toUpperCase()}::${(timeframe || '').trim()}`;
+    }
+
+    function parseTvTimestamp(value) {
+        if (value === null || value === undefined || value === '') return null;
+        if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+        const numeric = Number(value);
+        if (Number.isFinite(numeric)) {
+            const ms = numeric > 1e12 ? numeric : numeric * 1000;
+            const dateObj = new Date(ms);
+            return Number.isNaN(dateObj.getTime()) ? null : dateObj;
+        }
+        const dateObj = new Date(value);
+        return Number.isNaN(dateObj.getTime()) ? null : dateObj;
+    }
+
+    function formatTvTimestampFull(value) {
+        const date = parseTvTimestamp(value);
+        return date ? date.toLocaleString() : '—';
+    }
+
+    function formatTvTimestampShort(value) {
+        const date = parseTvTimestamp(value);
+        return date ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+    }
+
+    function formatTvPrice(value) {
+        const num = Number(value);
+        return Number.isFinite(num) ? `$${num.toFixed(2)}` : '—';
+    }
+
+    function formatTvNumber(value, digits = 2) {
+        const num = Number(value);
+        return Number.isFinite(num) ? num.toFixed(digits) : '—';
+    }
+
+    function setTvStreamsStatus(message) {
+        if (tvStreamsStatus) {
+            tvStreamsStatus.textContent = message;
+        }
+    }
+
+    function setTvSignalPlaceholder(message, showSpinner = false) {
+        if (!tvSignalCard) return;
+        tvSignalCard.innerHTML = `
+            <div class="card-body text-center py-4">
+                ${showSpinner ? `
+                    <div class="spinner-border text-info mb-3" role="status" style="width: 2rem; height: 2rem;">
+                        <span class="visually-hidden">Loading…</span>
+                    </div>
+                ` : ''}
+                <p class="text-muted mb-0">${message}</p>
+            </div>
+        `;
+    }
+
+    function renderTradingviewStreams() {
+        if (!tvStreamsBody) return;
+        if (!tvStreams.length) {
+            tvStreamsBody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-3">
+                        Waiting for TradingView webhook data.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        tvStreamsBody.innerHTML = '';
+        tvStreams.forEach(stream => {
+            const key = getTvStreamKey(stream.symbol, stream.timeframe);
+            const tr = document.createElement('tr');
+            tr.dataset.key = key;
+            if (key === tvActiveStreamKey) {
+                tr.classList.add('table-active');
+            }
+            const updatedAt = stream.last_bar_time || stream.latest_signal_time;
+            const updatedLabel = formatTvTimestampShort(updatedAt);
+            const updatedFull = formatTvTimestampFull(updatedAt);
+            const price = formatTvPrice(stream.last_price);
+            const barsVal = Number(stream.bar_count);
+            const bars = Number.isFinite(barsVal) ? barsVal : '—';
+            const signalLabel = (stream.latest_signal || '').toUpperCase() || '—';
+            tr.innerHTML = `
+                <td>
+                    <span class="ticker-chip">${(stream.symbol || '').toUpperCase()}</span>
+                    <div class="small text-muted">${stream.timeframe || ''}</div>
+                </td>
+                <td>${price}</td>
+                <td>${bars}</td>
+                <td>${signalLabel}</td>
+                <td class="small text-muted" title="${updatedFull}">${updatedLabel}</td>
+            `;
+            tr.addEventListener('click', () => {
+                selectTradingviewStream(stream);
+            });
+            tvStreamsBody.appendChild(tr);
+        });
+    }
+
+    function updateTvSelectionState(streamExists) {
+        if (streamExists) {
+            tvDetailRefreshBtn?.removeAttribute('disabled');
+            return;
+        }
+        tvActiveStream = null;
+        tvActiveStreamKey = '';
+        if (tvDetailRefreshBtn) tvDetailRefreshBtn.setAttribute('disabled', 'disabled');
+        setTvSignalPlaceholder('Select a stream to load the latest AI packet.');
+    }
+
+    async function fetchTradingviewStreams() {
+        if (tvStreamsLoading) return;
+        tvStreamsLoading = true;
+        setTvStreamsStatus('Loading streams…');
+        try {
+            const resp = await fetch('/api/tradingview/signals');
+            const result = await resp.json();
+            if (!result.success) {
+                setTvStreamsStatus(result.error || 'Unable to load streams.');
+                return;
+            }
+            const streams = Array.isArray(result.data && result.data.streams)
+                ? result.data.streams
+                : [];
+            const meta = (result.data && result.data.meta) || {};
+            tvStreams = streams.map(item => ({
+                ...item,
+                symbol: (item.symbol || '').toUpperCase(),
+                key: getTvStreamKey(item.symbol, item.timeframe)
+            }));
+            const stillActive = tvActiveStreamKey && tvStreams.some(s => s.key === tvActiveStreamKey);
+            if (stillActive) {
+                const match = tvStreams.find(s => s.key === tvActiveStreamKey);
+                tvActiveStream = match ? { symbol: match.symbol, timeframe: match.timeframe } : tvActiveStream;
+            } else {
+                updateTvSelectionState(false);
+            }
+            renderTradingviewStreams();
+            const streamText = streams.length ? `${streams.length} stream${streams.length === 1 ? '' : 's'}` : 'No streams';
+            const modelText = meta.model ? ` • Model ${meta.model}` : '';
+            setTvStreamsStatus(`${streamText}${modelText}`);
+        } catch (err) {
+            console.error('TradingView streams error', err);
+            setTvStreamsStatus('Failed to load streams.');
+        } finally {
+            tvStreamsLoading = false;
+        }
+    }
+
+    function selectTradingviewStream(stream) {
+        if (!stream) return;
+        tvActiveStreamKey = getTvStreamKey(stream.symbol, stream.timeframe);
+        tvActiveStream = {
+            symbol: (stream.symbol || '').toUpperCase(),
+            timeframe: stream.timeframe || ''
+        };
+        if (tvDetailRefreshBtn) tvDetailRefreshBtn.removeAttribute('disabled');
+        renderTradingviewStreams();
+        fetchTradingviewSignalDetail(true);
+    }
+
+    async function fetchTradingviewSignalDetail(scrollIntoView = false) {
+        if (!tvActiveStream || tvSignalLoading) return;
+        tvSignalLoading = true;
+        setTvSignalPlaceholder('Loading Perplexity signal…', true);
+        try {
+            const params = new URLSearchParams({
+                symbol: tvActiveStream.symbol,
+                tf: tvActiveStream.timeframe
+            });
+            const resp = await fetch(`/api/tradingview/signals?${params.toString()}`);
+            const result = await resp.json();
+            if (!result.success) {
+                setTvSignalPlaceholder(result.error || 'Unable to load signal.');
+                return;
+            }
+            renderTradingviewSignalDetail(result.data || {});
+            if (scrollIntoView) {
+                tvSignalCard?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        } catch (err) {
+            console.error('TradingView signal error', err);
+            setTvSignalPlaceholder('Failed to load AI signal.');
+        } finally {
+            tvSignalLoading = false;
+        }
+    }
+
+    function renderTradingviewSignalDetail(payload) {
+        if (!tvSignalCard) return;
+        const signal = payload.latest_signal || {};
+        const action = (signal.signal || 'HOLD').toUpperCase();
+        const entry = formatTvPrice(signal.entry);
+        const stop = formatTvPrice(signal.stop);
+        const target = formatTvPrice(signal.target);
+        const riskReward = formatTvNumber(signal.risk_reward);
+        const confidenceVal = Number(signal.confidence);
+        const confidenceText = Number.isFinite(confidenceVal) ? `${confidenceVal}/100` : '—';
+        const positionSize = signal.position_size_pct !== undefined && signal.position_size_pct !== null
+            ? `${formatTvNumber(signal.position_size_pct, 1)}%`
+            : '—';
+        const holdingWindow = signal.holding_window || '—';
+        const volatilityNotes = signal.volatility_notes || '';
+        const bars = Array.isArray(payload.bars) ? payload.bars : [];
+        const barCountVal = Number(payload.bar_count);
+        const barCount = Number.isFinite(barCountVal) ? barCountVal : bars.length;
+        const barsUsedVal = Number(signal.bars_used);
+        const barsUsed = Number.isFinite(barsUsedVal) ? barsUsedVal : bars.length;
+        const lastBar = bars.length ? bars[bars.length - 1] : null;
+        const firstBar = bars.length ? bars[0] : null;
+        const lastClose = lastBar ? formatTvPrice(lastBar.close) : '—';
+        const lastTimeIso = (lastBar && (lastBar.time_iso || lastBar.time)) || null;
+        const firstTimeIso = (firstBar && (firstBar.time_iso || firstBar.time)) || null;
+        const firstDate = parseTvTimestamp(firstTimeIso);
+        const lastDate = parseTvTimestamp(lastTimeIso);
+        const windowMinutes = (firstDate && lastDate)
+            ? Math.max(0, Math.round((lastDate - firstDate) / 60000))
+            : null;
+        const contextItems = Array.isArray(signal.context) && signal.context.length
+            ? signal.context.map(item => `<li>${item}</li>`).join('')
+            : '<li class="text-muted">No context bullets provided.</li>';
+        const invalidationItems = Array.isArray(signal.invalidations) && signal.invalidations.length
+            ? signal.invalidations.map(item => `<li>${item}</li>`).join('')
+            : '<li class="text-muted">No invalidations provided.</li>';
+        const meta = payload.meta || {};
+        const badgeClass = action === 'BUY'
+            ? 'badge bg-success-subtle text-success'
+            : action === 'SELL'
+                ? 'badge bg-danger-subtle text-danger'
+                : 'badge bg-secondary-subtle text-dark';
+
+        tvSignalCard.innerHTML = `
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0">${(payload.symbol || '').toUpperCase()} • ${payload.timeframe || ''}</h5>
+                    <small class="text-muted">Generated ${formatTvTimestampFull(signal.generated_at)}</small>
+                </div>
+                <div class="text-end">
+                    <span class="${badgeClass} px-3 py-2 text-uppercase">${action}</span>
+                    <div class="small text-muted">Confidence: ${confidenceText}</div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-12 col-md-6 border-end border-secondary-subtle">
+                        <h6 class="mb-2">Trade Levels</h6>
+                        <p class="mb-1"><strong>Entry:</strong> ${entry}</p>
+                        <p class="mb-1"><strong>Target:</strong> ${target}</p>
+                        <p class="mb-1"><strong>Stop:</strong> ${stop}</p>
+                        <p class="mb-1"><strong>Risk / Reward:</strong> ${riskReward}</p>
+                        <p class="mb-1"><strong>Position size:</strong> ${positionSize}</p>
+                        <p class="mb-1"><strong>Holding window:</strong> ${holdingWindow}</p>
+                        ${volatilityNotes ? `<p class="mb-0 small text-muted">${volatilityNotes}</p>` : ''}
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <h6 class="mb-2">Context</h6>
+                        <ul class="small mb-3">
+                            ${contextItems}
+                        </ul>
+                        <h6 class="mb-2">Invalidations</h6>
+                        <ul class="small mb-0">
+                            ${invalidationItems}
+                        </ul>
+                    </div>
+                </div>
+                <hr>
+                <div class="row g-3 small">
+                    <div class="col-12 col-md-6">
+                        <h6 class="mb-2">Bars Snapshot</h6>
+                        <p class="mb-1">Bars cached: ${barCount || '—'}</p>
+                        <p class="mb-1">Bars used by AI: ${barsUsed || '—'}</p>
+                        <p class="mb-1">Window: ${windowMinutes !== null ? windowMinutes + ' min' : '—'}</p>
+                        <p class="mb-0">Last close: ${lastClose} (${formatTvTimestampShort(lastTimeIso)})</p>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <h6 class="mb-2">Model Meta</h6>
+                        <p class="mb-1">Model: ${meta.model || '—'}</p>
+                        <p class="mb-1">Prompt window: ${meta.prompt_bar_limit || '—'} bars • Min bars ${meta.min_bars || '—'}</p>
+                        <p class="mb-1">Cooldown remaining: ${typeof meta.cooldown_remaining === 'number' ? meta.cooldown_remaining.toFixed(1) + 's' : '—'}</p>
+                        <p class="mb-0">Signal inflight: ${meta.signal_inflight ? 'Yes' : 'No'}</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    tvRefreshBtn?.addEventListener('click', fetchTradingviewStreams);
+    tvDetailRefreshBtn?.addEventListener('click', () => fetchTradingviewSignalDetail(false));
+
+    tvTab?.addEventListener('shown.bs.tab', () => {
+        if (!tvStreams.length) {
+            fetchTradingviewStreams();
+        }
+    });
+    if (tvTab?.classList.contains('active')) {
+        fetchTradingviewStreams();
+    }
 
     // ------------- History tab logic -------------
     const historyTab = document.getElementById('history-tab');
