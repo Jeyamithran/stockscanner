@@ -6,6 +6,7 @@ import ast
 import sqlite3
 import time
 import math
+import copy
 from collections import deque
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
@@ -299,6 +300,7 @@ class TradingViewRelay:
         self.max_bars = max(40, int(max_bars))
         self._bars: Dict[str, deque] = {}
         self._signals: Dict[str, Dict[str, Any]] = {}
+        self._metadata: Dict[str, Dict[str, Any]] = {}
         self._lock = Lock()
 
     def stream_key(self, symbol: str, timeframe: str) -> str:
@@ -306,14 +308,10 @@ class TradingViewRelay:
         timeframe_clean = str(timeframe or "").strip()
         return f"{symbol_clean}::{timeframe_clean}"
 
-    def add_bar(self, symbol: str, timeframe: str, bar: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
-        key = self.stream_key(symbol, timeframe)
-        if key.endswith("::"):
-            raise ValueError("Symbol and timeframe are required for TradingView ingestion.")
+    def _normalize_bar(self, symbol_val: str, timeframe_val: str, bar: Dict[str, Any]) -> Dict[str, Any]:
         epoch = _tv_epoch_seconds(bar.get("time"))
         if epoch is None:
             raise ValueError("Invalid or missing bar timestamp.")
-        symbol_val, timeframe_val = key.split("::", 1)
         normalized = {
             "symbol": symbol_val,
             "timeframe": timeframe_val,
@@ -327,11 +325,39 @@ class TradingViewRelay:
         }
         if normalized["close"] is None:
             raise ValueError("Close price is required for TradingView ingestion.")
+        return normalized
+
+    def add_bar(self, symbol: str, timeframe: str, bar: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+        key = self.stream_key(symbol, timeframe)
+        if key.endswith("::"):
+            raise ValueError("Symbol and timeframe are required for TradingView ingestion.")
+        symbol_val, timeframe_val = key.split("::", 1)
+        normalized = self._normalize_bar(symbol_val, timeframe_val, bar)
         with self._lock:
             dq = self._bars.setdefault(key, deque(maxlen=self.max_bars))
             dq.append(normalized)
             count = len(dq)
         return count, normalized
+
+    def add_bars(self, symbol: str, timeframe: str, bars: List[Dict[str, Any]], replace: bool = False) -> Tuple[int, Optional[Dict[str, Any]]]:
+        key = self.stream_key(symbol, timeframe)
+        if key.endswith("::"):
+            raise ValueError("Symbol and timeframe are required for TradingView ingestion.")
+        symbol_val, timeframe_val = key.split("::", 1)
+        normalized_list: List[Dict[str, Any]] = []
+        for bar in bars:
+            normalized_list.append(self._normalize_bar(symbol_val, timeframe_val, bar))
+        if not normalized_list:
+            return len(self._bars.get(key, [])), None
+
+        with self._lock:
+            dq = self._bars.setdefault(key, deque(maxlen=self.max_bars))
+            if replace:
+                dq.clear()
+            for entry in normalized_list:
+                dq.append(entry)
+            count = len(dq)
+        return count, normalized_list[-1]
 
     def get_bars(self, symbol: str, timeframe: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         key = self.stream_key(symbol, timeframe)
@@ -367,6 +393,7 @@ class TradingViewRelay:
                 symbol, timeframe = key.split("::", 1)
                 last_bar = dq[-1] if dq else None
                 signal = self._signals.get(key)
+                metadata = self._metadata.get(key)
                 snapshots.append({
                     "symbol": symbol,
                     "timeframe": timeframe,
@@ -375,8 +402,25 @@ class TradingViewRelay:
                     "last_price": last_bar.get("close") if last_bar else None,
                     "latest_signal": signal.get("signal") if signal else None,
                     "latest_signal_time": signal.get("generated_at") if signal else None,
+                    "has_context": bool(metadata),
                 })
         return snapshots
+
+    def set_metadata(self, symbol: str, timeframe: str, metadata: Optional[Dict[str, Any]]) -> None:
+        key = self.stream_key(symbol, timeframe)
+        with self._lock:
+            if metadata:
+                self._metadata[key] = metadata
+            elif key in self._metadata:
+                del self._metadata[key]
+
+    def get_metadata(self, symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
+        key = self.stream_key(symbol, timeframe)
+        with self._lock:
+            metadata = self._metadata.get(key)
+            if metadata is None:
+                return None
+            return copy.deepcopy(metadata)
 
 
 TRADINGVIEW_SIGNAL_LOCK = Lock()
@@ -423,13 +467,17 @@ def summarize_tradingview_bars(bars: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def build_tradingview_prompt_payload(symbol: str, timeframe: str, bars: List[Dict[str, Any]]) -> Dict[str, Any]:
     summary = summarize_tradingview_bars(bars)
-    return {
+    context = tradingview_relay.get_metadata(symbol, timeframe)
+    payload = {
         "symbol": symbol,
         "timeframe": timeframe,
         "bar_count": len(bars),
         "summary": summary,
         "bars": bars,
     }
+    if context:
+        payload["indicators"] = context
+    return payload
 
 
 def maybe_queue_tradingview_signal(symbol: str, timeframe: str, force: bool = False) -> Tuple[bool, Optional[str]]:
@@ -471,8 +519,9 @@ def generate_tradingview_signal(symbol: str, timeframe: str, bars: List[Dict[str
         return None
     payload = build_tradingview_prompt_payload(symbol, timeframe, bars)
     user_prompt = (
-        "OHLCV bars forwarded from TradingView (oldest to newest). Prices already match what the trader sees; do "
-        "NOT invent new bars.\n\n"
+        "OHLCV bars forwarded from TradingView (oldest to newest). Prices already match what the trader sees; do NOT "
+        "invent new bars. Additional indicator context (EMA/RSI/structure/session) may be present under the "
+        "'indicators' key.\n\n"
         f"{json.dumps(payload, ensure_ascii=False)}\n\n"
         "Return ONLY the JSON object described in the system prompt."
     )
@@ -1798,36 +1847,52 @@ def tradingview_webhook():
     if not symbol or not timeframe:
         return jsonify({"success": False, "error": "symbol and timeframe are required."}), 400
 
-    timestamp = payload.get("time") or payload.get("timestamp")
-    open_val = _tv_safe_float(payload.get("open"))
-    high_val = _tv_safe_float(payload.get("high"))
-    low_val = _tv_safe_float(payload.get("low"))
-    close_val = _tv_safe_float(payload.get("close"))
-    volume_val = _tv_safe_float(payload.get("volume")) or 0.0
-    if None in (open_val, high_val, low_val, close_val):
-        return jsonify({"success": False, "error": "Incomplete OHLC data."}), 400
-    epoch = _tv_epoch_seconds(timestamp)
-    if epoch is None:
-        return jsonify({"success": False, "error": "Invalid timestamp supplied."}), 400
+    bars_payload = payload.get("bars")
+    multi_bar_mode = isinstance(bars_payload, list) and len(bars_payload) > 0
 
-    try:
-        bar_count, normalized = tradingview_relay.add_bar(
-            symbol,
-            timeframe,
-            {
-                "time": epoch,
-                "open": open_val,
-                "high": high_val,
-                "low": low_val,
-                "close": close_val,
-                "volume": volume_val,
-            }
-        )
-    except ValueError as exc:
-        return jsonify({"success": False, "error": str(exc)}), 400
-    except Exception as exc:
-        logging.error("TradingView ingestion error: %s", exc)
-        return jsonify({"success": False, "error": "Failed to record bar."}), 500
+    if multi_bar_mode:
+        try:
+            bar_count, normalized = tradingview_relay.add_bars(
+                symbol,
+                timeframe,
+                bars_payload,
+                replace=True
+            )
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+        except Exception as exc:
+            logging.error("TradingView ingestion error (batch): %s", exc)
+            return jsonify({"success": False, "error": "Failed to record bars."}), 500
+    else:
+        timestamp = payload.get("time") or payload.get("timestamp")
+        open_val = _tv_safe_float(payload.get("open"))
+        high_val = _tv_safe_float(payload.get("high"))
+        low_val = _tv_safe_float(payload.get("low"))
+        close_val = _tv_safe_float(payload.get("close"))
+        volume_val = _tv_safe_float(payload.get("volume")) or 0.0
+        if None in (open_val, high_val, low_val, close_val):
+            return jsonify({"success": False, "error": "Incomplete OHLC data."}), 400
+        epoch = _tv_epoch_seconds(timestamp)
+        if epoch is None:
+            return jsonify({"success": False, "error": "Invalid timestamp supplied."}), 400
+        try:
+            bar_count, normalized = tradingview_relay.add_bar(
+                symbol,
+                timeframe,
+                {
+                    "time": epoch,
+                    "open": open_val,
+                    "high": high_val,
+                    "low": low_val,
+                    "close": close_val,
+                    "volume": volume_val,
+                }
+            )
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+        except Exception as exc:
+            logging.error("TradingView ingestion error: %s", exc)
+            return jsonify({"success": False, "error": "Failed to record bar."}), 500
 
     logging.info(
         "TradingView webhook bar captured: %s %s close=%s bars_cached=%d",
@@ -1836,6 +1901,25 @@ def tradingview_webhook():
         normalized.get("close"),
         bar_count
     )
+
+    indicator_sections: Dict[str, Any] = {}
+    for key in ("trend", "momentum", "volatility", "volume_info", "structure", "session", "risk_settings"):
+        value = payload.get(key)
+        if isinstance(value, dict) and value:
+            indicator_sections[key] = value
+    if isinstance(payload.get("bars_meta"), dict):
+        indicator_sections["bars_meta"] = payload["bars_meta"]
+    if payload.get("bar_time"):
+        indicator_sections.setdefault("meta", {})
+        indicator_sections["meta"]["bar_time"] = payload.get("bar_time")
+    if indicator_sections:
+        indicator_sections.setdefault("meta", {})
+        indicator_sections["meta"].update({
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "received_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+        })
+        tradingview_relay.set_metadata(symbol, timeframe, indicator_sections)
 
     auto_signal = _tv_coerce_bool(payload.get("auto_signal"), default=True)
     force_signal = _tv_coerce_bool(payload.get("force_signal"))
@@ -1890,6 +1974,7 @@ def tradingview_signals_api():
     if symbol and timeframe:
         bars = tradingview_relay.get_bars(symbol, timeframe, limit=limit)
         latest_signal = tradingview_relay.get_signal(symbol, timeframe)
+        context_snapshot = tradingview_relay.get_metadata(symbol, timeframe)
         key = tradingview_relay.stream_key(symbol, timeframe)
         with TRADINGVIEW_SIGNAL_LOCK:
             inflight = key in TRADINGVIEW_SIGNAL_INFLIGHT
@@ -1907,6 +1992,7 @@ def tradingview_signals_api():
                 "bars": bars,
                 "bar_count": len(bars),
                 "latest_signal": latest_signal,
+                "context": context_snapshot,
                 "meta": {
                     "model": TRADINGVIEW_SIGNAL_MODEL,
                     "min_bars": TRADINGVIEW_MIN_BARS_FOR_SIGNAL,

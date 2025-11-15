@@ -87,4 +87,30 @@ Perplexity answers with a strict JSON object (see `TRADINGVIEW_SIGNAL_RESPONSE_S
 ## 6. Dashboard tab
 Launch the scanner UI and click the new **TradingView Signals** tab to see every active webhook stream, refresh the cache, and inspect the latest AI packet (entry/stop/target/context) without leaving the dashboard.
 
+## 7. Rich day-trade payloads (optional)
+You can send a full snapshot instead of one bar at a time. POST a payload like:
+
+```json
+{
+  "symbol": "AAPL",
+  "tf": "5",
+  "bar_time": 1731604800000,
+  "bars": [
+    { "time": 1731601200000, "open": 194.1, "high": 194.5, "low": 193.9, "close": 194.3, "volume": 1500000 },
+    { "time": 1731601500000, "open": 194.3, "high": 195.1, "low": 194.0, "close": 194.9, "volume": 1710000 }
+  ],
+  "trend": { "ema_fast": 195.2, "ema_mid": 194.6, "ema_slow": 192.4, "trend_regime": "up" },
+  "momentum": { "rsi_14": 63.8, "macd": 1.12, "macd_signal": 0.94, "macd_hist": 0.18 },
+  "volatility": { "atr_14": 1.7, "atr_percent_of_price": 0.0087 },
+  "volume_info": { "relative_volume": 1.4, "vol_spike_flag": true },
+  "structure": { "recent_support_levels": [192.5, 190.2], "recent_resistance_levels": [196.2, 197.8], "pattern": "higher_highs_higher_lows" },
+  "session": { "session_type": "regular", "time_of_day": "mid_session" },
+  "risk_settings": { "account_risk_percent": 1.0, "min_rr_ratio": 2.0 },
+  "token": "tradingviewtknjeya2028",
+  "auto_signal": true
+}
+```
+
+The webhook will replace the cached bars for that `symbol+tf`, store the indicator blocks, and immediately queue Perplexity (respecting `TRADINGVIEW_MIN_BARS`). Send separate alerts for each timeframe (e.g., 5m/15m/1h) if you want stacked context.
+
 That’s the complete TradingView → Flask → Perplexity loop; drop it into your infra and you’ll have AI that sees the *exact* candles you do.

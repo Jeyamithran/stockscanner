@@ -2979,6 +2979,26 @@
         return Number.isFinite(num) ? num.toFixed(digits) : '—';
     }
 
+    function formatIndicatorValue(value) {
+        if (value === null || value === undefined) return '—';
+        if (typeof value === 'number') {
+            if (Number.isInteger(value)) return value.toString();
+            return value.toFixed(Math.abs(value) >= 1 ? 2 : 4);
+        }
+        if (typeof value === 'boolean') {
+            return value ? 'true' : 'false';
+        }
+        if (Array.isArray(value)) {
+            return value.map(item => formatIndicatorValue(item)).join(', ');
+        }
+        if (typeof value === 'object') {
+            return Object.entries(value)
+                .map(([k, v]) => `${k}: ${formatIndicatorValue(v)}`)
+                .join('; ');
+        }
+        return String(value);
+    }
+
     function setTvStreamsStatus(message) {
         if (tvStreamsStatus) {
             tvStreamsStatus.textContent = message;
@@ -3174,6 +3194,28 @@
             : action === 'SELL'
                 ? 'badge bg-danger-subtle text-danger'
                 : 'badge bg-secondary-subtle text-dark';
+        const contextSnapshot = payload.context || {};
+        const indicatorSections = [];
+        const indicatorKeys = ['trend', 'momentum', 'volatility', 'volume_info', 'structure', 'session', 'risk_settings'];
+        indicatorKeys.forEach(key => {
+            const block = contextSnapshot[key];
+            if (!block || typeof block !== 'object') return;
+            const rows = Object.entries(block)
+                .map(([k, v]) => `<div><span class="text-muted">${k}:</span> ${formatIndicatorValue(v)}</div>`)
+                .join('');
+            indicatorSections.push(`
+                <div class="col-12 col-md-6">
+                    <h6 class="mb-2 text-capitalize">${key.replace(/_/g, ' ')}</h6>
+                    ${rows || '<p class="text-muted small mb-0">No data.</p>'}
+                </div>
+            `);
+        });
+        const contextMeta = contextSnapshot.meta || {};
+        const contextMetaLabel = contextMeta.bar_time
+            ? `Snapshot: ${formatTvTimestampFull(contextMeta.bar_time)}`
+            : contextMeta.received_at
+                ? `Updated: ${formatTvTimestampFull(contextMeta.received_at)}`
+                : '';
 
         tvSignalCard.innerHTML = `
             <div class="card-header d-flex justify-content-between align-items-center">
@@ -3226,6 +3268,13 @@
                         <p class="mb-0">Signal inflight: ${meta.signal_inflight ? 'Yes' : 'No'}</p>
                     </div>
                 </div>
+                ${indicatorSections.length ? `
+                    <hr>
+                    <div class="row g-3 small">
+                        ${indicatorSections.join('')}
+                    </div>
+                ` : ''}
+                ${contextMetaLabel ? `<p class="small text-muted mt-3 mb-0">${contextMetaLabel}</p>` : ''}
             </div>
         `;
     }
