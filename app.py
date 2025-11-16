@@ -330,7 +330,6 @@ def persist_signal_to_db(symbol: str, timeframe: str, signal_payload: Dict[str, 
         time_horizon=signal_payload.get("time_horizon"),
         reason_short=short_reason,
         raw_json=json.dumps(signal_payload, ensure_ascii=False),
-        context_json=signal_payload.get("context_json"),
     )
     try:
         with session_scope() as session:
