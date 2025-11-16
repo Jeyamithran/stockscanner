@@ -227,10 +227,11 @@ else:
 
 @contextmanager
 def session_scope():
-    if SessionLocal is None:
+    factory = SessionLocal or NewSessionLocal
+    if factory is None:
         yield None
         return
-    session = SessionLocal()
+    session = factory()
     try:
         yield session
         session.commit()
@@ -262,7 +263,7 @@ def _coerce_dt(value: Any) -> Optional[datetime]:
 
 
 def persist_bars_to_db(bars: List[Dict[str, Any]]) -> None:
-    if SessionLocal is None or not bars:
+    if (SessionLocal is None and NewSessionLocal is None) or not bars:
         return
     rows = []
     for bar in bars:
@@ -283,6 +284,8 @@ def persist_bars_to_db(bars: List[Dict[str, Any]]) -> None:
         return
     try:
         with session_scope() as session:
+            if session is None:
+                return
             stmt = pg_insert(Bar).values(rows)
             update_cols = {
                 "open": stmt.excluded.open,
@@ -341,10 +344,12 @@ def persist_signal_to_db(symbol: str, timeframe: str, signal_payload: Dict[str, 
 
 
 def fetch_recent_bars_from_db(symbol: str, timeframe: str, limit: int) -> List[Dict[str, Any]]:
-    if SessionLocal is None:
+    if SessionLocal is None and NewSessionLocal is None:
         return []
     try:
         with session_scope() as session:
+            if session is None:
+                return []
             rows = (
                 session.query(Bar)
                 .filter(Bar.symbol == symbol.upper(), Bar.timeframe == timeframe)
@@ -372,10 +377,12 @@ def fetch_recent_bars_from_db(symbol: str, timeframe: str, limit: int) -> List[D
 
 
 def fetch_latest_signal_from_db(symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
-    if SessionLocal is None:
+    if SessionLocal is None and NewSessionLocal is None:
         return None
     try:
         with session_scope() as session:
+            if session is None:
+                return None
             row = (
                 session.query(SignalRecord)
                 .filter(SignalRecord.symbol == symbol.upper(), SignalRecord.timeframe == timeframe)
