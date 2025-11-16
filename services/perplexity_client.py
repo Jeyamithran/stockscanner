@@ -55,11 +55,25 @@ def call_perplexity(context: Dict, mode: str, analysis_mode: str) -> str:
     return response.choices[0].message.content or ""
 
 
+def _extract_json_from_text(text: str) -> str:
+    """
+    Grab the first JSON object from free-form text (e.g., markdown fences).
+    Falls back to raw text if braces cannot be matched.
+    """
+    if not text:
+        return ""
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start : end + 1]
+    return text
+
+
 def parse_ai_response(raw_content: str) -> Dict:
     try:
-        return json.loads(raw_content)
-    except Exception:
-        logging.error("Failed to parse Perplexity response; defaulting to hold.")
+        return json.loads(_extract_json_from_text(raw_content))
+    except Exception as exc:
+        logging.error("Failed to parse Perplexity response; defaulting to hold. Error: %s; Raw: %s", exc, (raw_content or "")[:500])
         return {
             "signal": "hold",
             "entry": None,
