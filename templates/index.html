@@ -556,6 +556,12 @@
                 TradingView Signals
             </button>
         </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="ai-signals-tab" data-bs-toggle="tab" data-bs-target="#ai-signals"
+                    type="button" role="tab">
+                🧠 AI Signals
+            </button>
+        </li>
     </ul>
 
     <div class="tab-content">
@@ -1266,6 +1272,154 @@
                             <p class="text-center text-muted mb-0">
                                 Select a stream on the left to load its latest AI decision packet.
                             </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===================== AI SIGNALS TAB ===================== -->
+        <div class="tab-pane fade" id="ai-signals" role="tabpanel" aria-labelledby="ai-signals-tab">
+            <div class="container-fluid py-3">
+                <div class="row g-3">
+                    <div class="col-lg-4">
+                        <div class="card shadow-sm mb-3">
+                            <div class="card-header">
+                                <strong>Signal Request</strong>
+                            </div>
+                            <div class="card-body">
+                                <form id="aiSignalForm">
+                                    <div class="mb-3">
+                                        <label for="symbolInput" class="form-label">Symbol</label>
+                                        <input type="text" class="form-control" id="symbolInput" value="SPY" required>
+                                        <div class="form-text">Examples: SPY, AAPL, NVDA, TSLA</div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="timeframeInput" class="form-label">Timeframe</label>
+                                        <select class="form-select" id="timeframeInput">
+                                            <option value="5m" selected>5m (Day)</option>
+                                            <option value="15m">15m</option>
+                                            <option value="1h">1h</option>
+                                            <option value="1D">1D (Swing)</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Trading Mode</label>
+                                        <div class="btn-group w-100" role="group">
+                                            <input type="radio" class="btn-check" name="modeRadio" id="modeDay" value="day" checked>
+                                            <label class="btn btn-outline-primary" for="modeDay">Day Trade</label>
+                                            <input type="radio" class="btn-check" name="modeRadio" id="modeSwing" value="swing">
+                                            <label class="btn btn-outline-primary" for="modeSwing">Swing Trade</label>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Analysis Type</label>
+                                        <div class="btn-group w-100" role="group">
+                                            <input type="radio" class="btn-check" name="analysisRadio" id="analysisTech" value="technical" checked>
+                                            <label class="btn btn-outline-secondary" for="analysisTech">Technical Only</label>
+                                            <input type="radio" class="btn-check" name="analysisRadio" id="analysisNewsTech" value="news_tech">
+                                            <label class="btn btn-outline-secondary" for="analysisNewsTech">News + Technical</label>
+                                        </div>
+                                        <div class="form-text">News+Tech uses an online model.</div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary w-100" id="runSignalBtn">
+                                        Run AI Signal
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <div class="card shadow-sm mb-3" id="latestSignalCard" style="display: none;">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><strong>Latest Signal</strong></span>
+                                <span class="badge bg-info text-dark" id="latestSignalModeBadge"></span>
+                            </div>
+                            <div class="card-body">
+                                <h5 class="card-title" id="latestSignalTitle"></h5>
+                                <p class="mb-1">
+                                    <span class="badge" id="latestSignalStrengthBadge"></span>
+                                    <span class="badge bg-secondary" id="latestSignalConfidence"></span>
+                                </p>
+                                <div class="row mt-3">
+                                    <div class="col-4">
+                                        <div class="small text-muted">Entry</div>
+                                        <div id="latestSignalEntry" class="fw-semibold"></div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="small text-muted">Stop</div>
+                                        <div id="latestSignalStop" class="fw-semibold text-danger"></div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="small text-muted">Target</div>
+                                        <div id="latestSignalTarget" class="fw-semibold text-success"></div>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <div class="small text-muted">Risk:Reward</div>
+                                    <div id="latestSignalRR" class="fw-semibold"></div>
+                                </div>
+                                <div class="mt-3">
+                                    <div class="small text-muted">Time Horizon</div>
+                                    <div id="latestSignalHorizon"></div>
+                                </div>
+                                <hr>
+                                <p class="small" id="latestSignalReason"></p>
+                                <div class="small text-muted mt-2">
+                                    Last updated: <span id="latestSignalUpdatedAt"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card shadow-sm" id="noSignalCard">
+                            <div class="card-body">
+                                <p class="mb-0 small text-muted">
+                                    No AI signals yet. Run a signal above or wait for a TradingView breakout alert to reach <code>/tv-webhook</code>.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-8">
+                        <div class="card shadow-sm mb-3">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><strong>Recent Signals</strong></span>
+                                <button class="btn btn-sm btn-outline-secondary" id="refreshSignalsBtn">Refresh</button>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover mb-0" id="signalsTable">
+                                        <thead class="table-light">
+                                        <tr>
+                                            <th>Time</th>
+                                            <th>Symbol</th>
+                                            <th>Mode</th>
+                                            <th>Analysis</th>
+                                            <th>Signal</th>
+                                            <th>Entry</th>
+                                            <th>Stop</th>
+                                            <th>Target</th>
+                                            <th>RR</th>
+                                            <th>Conf%</th>
+                                        </tr>
+                                        </thead>
+                                        <tbody id="signalsTableBody">
+                                        <tr>
+                                            <td colspan="10" class="text-center text-muted small py-3">No signals yet.</td>
+                                        </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card shadow-sm">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><strong>Live Breakout Feed</strong></span>
+                                <small class="text-muted">From TradingView /tv-webhook</small>
+                            </div>
+                            <div class="card-body" style="max-height: 260px; overflow-y: auto;" id="breakoutFeed">
+                                <p class="small text-muted mb-0">Waiting for breakout alerts...</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -4037,6 +4191,172 @@
     if (historyTab?.classList.contains('active')) {
         fetchHistorySummary();
     }
+
+    // ------------- Persist active tab across reloads -------------
+    const tabLinks = document.querySelectorAll('#mainTabs button[data-bs-toggle="tab"]');
+    tabLinks.forEach(btn => {
+        btn.addEventListener('shown.bs.tab', (event) => {
+            const target = event.target?.getAttribute('data-bs-target');
+            if (target) {
+                localStorage.setItem('activeTabId', target);
+            }
+        });
+    });
+    const savedTabId = localStorage.getItem('activeTabId');
+    if (savedTabId) {
+        const trigger = document.querySelector(`#mainTabs button[data-bs-target="${savedTabId}"]`);
+        if (trigger) {
+            const tab = new bootstrap.Tab(trigger);
+            tab.show();
+        }
+    }
+
+    // ------------- AI Signals tab logic -------------
+    const aiSignalForm = document.getElementById('aiSignalForm');
+    const runSignalBtn = document.getElementById('runSignalBtn');
+    const noSignalCard = document.getElementById('noSignalCard');
+    const latestSignalCard = document.getElementById('latestSignalCard');
+    const refreshSignalsBtn = document.getElementById('refreshSignalsBtn');
+    const signalsTableBody = document.getElementById('signalsTableBody');
+
+    function setLatestSignalCard(sig) {
+        if (!sig || !sig.signal) {
+            noSignalCard.style.display = 'block';
+            latestSignalCard.style.display = 'none';
+            return;
+        }
+        noSignalCard.style.display = 'none';
+        latestSignalCard.style.display = 'block';
+
+        document.getElementById('latestSignalTitle').textContent = `${sig.symbol || ''} • ${sig.timeframe || ''}`;
+        document.getElementById('latestSignalModeBadge').textContent = `${sig.mode || ''} • ${sig.analysis_mode || ''}`;
+
+        const strengthBadge = document.getElementById('latestSignalStrengthBadge');
+        strengthBadge.textContent = sig.signal || '';
+        strengthBadge.className = 'badge';
+        if (sig.signal === 'strong_buy') strengthBadge.classList.add('bg-success');
+        else if (sig.signal === 'buy') strengthBadge.classList.add('bg-primary');
+        else if (sig.signal === 'hold') strengthBadge.classList.add('bg-secondary');
+        else if (sig.signal === 'sell') strengthBadge.classList.add('bg-warning');
+        else if (sig.signal === 'strong_sell') strengthBadge.classList.add('bg-danger');
+        else strengthBadge.classList.add('bg-light', 'text-dark');
+
+        document.getElementById('latestSignalConfidence').textContent = `Confidence: ${sig.confidence ?? 0}%`;
+        document.getElementById('latestSignalEntry').textContent = sig.entry != null ? Number(sig.entry).toFixed(2) : '-';
+        document.getElementById('latestSignalStop').textContent = sig.stop != null ? Number(sig.stop).toFixed(2) : '-';
+        document.getElementById('latestSignalTarget').textContent = sig.target != null ? Number(sig.target).toFixed(2) : '-';
+        document.getElementById('latestSignalRR').textContent = sig.rr_ratio != null ? Number(sig.rr_ratio).toFixed(2) : '-';
+        document.getElementById('latestSignalHorizon').textContent = sig.time_horizon || '-';
+        document.getElementById('latestSignalReason').textContent = sig.reason_short || '';
+        document.getElementById('latestSignalUpdatedAt').textContent = sig.created_at || '';
+    }
+
+    async function fetchLatestSignal() {
+        const symbol = document.getElementById('symbolInput').value.trim().toUpperCase();
+        const mode = document.querySelector("input[name='modeRadio']:checked")?.value || 'day';
+        const analysis_mode = document.querySelector("input[name='analysisRadio']:checked")?.value || 'technical';
+        if (!symbol) return;
+        const params = new URLSearchParams({ symbol, mode, analysis_mode });
+        const resp = await fetch(`/signals/latest?${params.toString()}`);
+        if (!resp.ok) {
+            setLatestSignalCard(null);
+            return;
+        }
+        const payload = await resp.json();
+        setLatestSignalCard(payload?.data);
+    }
+
+    async function fetchRecentSignals() {
+        try {
+            const resp = await fetch('/signals/recent?limit=50');
+            if (!resp.ok) return;
+            const rows = await resp.json();
+            renderSignalsTable(rows);
+        } catch (err) {
+            console.error('recent signals error', err);
+        }
+    }
+
+    function renderSignalsTable(rows) {
+        signalsTableBody.innerHTML = '';
+        if (!Array.isArray(rows) || !rows.length) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 10;
+            td.className = 'text-center text-muted small py-3';
+            td.textContent = 'No signals yet.';
+            tr.appendChild(td);
+            signalsTableBody.appendChild(tr);
+            return;
+        }
+        rows.forEach(sig => {
+            const tr = document.createElement('tr');
+            const cells = [
+                sig.created_at || '',
+                sig.symbol || '',
+                sig.mode || '',
+                sig.analysis_mode || '',
+                sig.signal || '',
+                sig.entry != null ? Number(sig.entry).toFixed(2) : '-',
+                sig.stop != null ? Number(sig.stop).toFixed(2) : '-',
+                sig.target != null ? Number(sig.target).toFixed(2) : '-',
+                sig.rr_ratio != null ? Number(sig.rr_ratio).toFixed(2) : '-',
+                sig.confidence != null ? `${sig.confidence}%` : '-',
+            ];
+            cells.forEach(text => {
+                const td = document.createElement('td');
+                td.textContent = text;
+                tr.appendChild(td);
+            });
+            signalsTableBody.appendChild(tr);
+        });
+    }
+
+    async function runSignalRequest() {
+        const symbol = document.getElementById('symbolInput').value.trim().toUpperCase();
+        const timeframe = document.getElementById('timeframeInput').value;
+        const mode = document.querySelector("input[name='modeRadio']:checked")?.value || 'day';
+        const analysis_mode = document.querySelector("input[name='analysisRadio']:checked")?.value || 'technical';
+        if (!symbol) return;
+        runSignalBtn.disabled = true;
+        runSignalBtn.textContent = 'Running...';
+        try {
+            const resp = await fetch('/signals/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbol, timeframe, mode, analysis_mode })
+            });
+            if (!resp.ok) {
+                alert('Error: Unable to run AI signal.');
+                return;
+            }
+            const payload = await resp.json();
+            setLatestSignalCard(payload?.data);
+            await fetchRecentSignals();
+        } catch (err) {
+            console.error('run signal error', err);
+            alert('Error calling /signals/run');
+        } finally {
+            runSignalBtn.disabled = false;
+            runSignalBtn.textContent = 'Run AI Signal';
+        }
+    }
+
+    aiSignalForm?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        runSignalRequest();
+    });
+
+    refreshSignalsBtn?.addEventListener('click', () => {
+        fetchRecentSignals();
+        fetchLatestSignal();
+    });
+
+    const aiSignalsTab = document.getElementById('ai-signals-tab');
+    aiSignalsTab?.addEventListener('shown.bs.tab', () => {
+        fetchRecentSignals();
+        fetchLatestSignal();
+    });
 
     // No auto load for scanner/news; you trigger them manually with buttons.
 </script>

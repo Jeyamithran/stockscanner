@@ -15,6 +15,7 @@ Set the usual scanner variables plus the TradingView knobs:
 | `TRADINGVIEW_SIGNAL_MODEL` | Model alias/id, e.g. `reasoning` or `sonar-pro`. |
 | `TRADINGVIEW_SIGNAL_MAX_WORKERS` | Async workers for AI calls (default `2`). |
 | `TRADINGVIEW_SIGNAL_COOLDOWN_SECONDS` | Cooldown per stream to avoid spamming the model (default `60`). |
+| `DATABASE_URL` | Postgres connection string (e.g., `postgresql+psycopg2://user:pass@host:5432/db`). When set, bars and AI signals are persisted. |
 
 ## 2. Pine “data relay” indicator
 Create an indicator that emits JSON whenever the bar closes. Include your webhook token inside the JSON body so Flask can authenticate it.
@@ -79,7 +80,7 @@ curl -u admin:password \
 Perplexity answers with a strict JSON object (see `TRADINGVIEW_SIGNAL_RESPONSE_SCHEMA`). Fields include `signal`, `entry`, `stop`, `target`, `risk_reward`, `confidence`, 3× context bullets, invalidations, and a suggested holding window. Every response is cached so the dashboard (or Telegram, etc.) can display it immediately.
 
 ## 5. Ops notes
-- Bars and signals stay in-memory only, so point this service at Redis/Postgres if you need permanence.
+ - Bars and signals are cached in-memory; when `DATABASE_URL` is set they are also upserted into Postgres (`bars`/`signals`) and served as fallback if the cache is empty.
 - Cooldown + inflight guards prevent duplicate model calls when TradingView fires multiple alerts quickly.
 - Adjust the Pine timeframe and the `TRADINGVIEW_*` env knobs per desk (scalp vs swing) without touching Python code.
 - The rest of the scanner still works (Finnhub/YFinance fallbacks, catalyst scans, etc.), so you can blend the TV signal inside the existing UI or route it to Telegram.

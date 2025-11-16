@@ -8,6 +8,7 @@ import time
 import math
 import copy
 from collections import deque
+from contextlib import contextmanager
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
 from json import JSONDecodeError
@@ -22,6 +23,25 @@ from werkzeug.exceptions import HTTPException, InternalServerError
 from dotenv import load_dotenv
 from openai import OpenAI
 import xml.etree.ElementTree as ET
+from database import init_db as init_new_db
+from database import SessionLocal as NewSessionLocal
+from models import Signal as SignalRecordModel, AlertHistory, HighGrowthCandidate
+from services.bars import save_bar_from_payload, get_recent_bars
+from services.signals import run_ai_signal
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    DateTime,
+    Float,
+    Text,
+    UniqueConstraint,
+    Index,
+)
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import declarative_base, sessionmaker
 try:
     import yfinance as yf
 except ImportError:
@@ -104,6 +124,275 @@ PROFILE_LABELS = {
     "immediate_breakout": "Breakout Radar",
     "high_growth": "High Growth"
 }
+
+
+# -------------------------------------------------------------
+#  Postgres (bars + signals)
+# -------------------------------------------------------------
+Base = declarative_base()
+
+POSTGRES_DSN = (
+    os.environ.get("DATABASE_URL")
+    or os.environ.get("POSTGRES_DSN")
+    or os.environ.get("POSTGRES_URL")
+)
+POSTGRES_ECHO = os.environ.get("SQL_ECHO", "false").strip().lower() in {"1", "true", "yes", "on"}
+DB_ENGINE = None
+SessionLocal = None
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Bar(Base):
+    __tablename__ = "bars"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(32), nullable=False)
+    timeframe = Column(String(24), nullable=False)
+    time = Column(DateTime(timezone=True), nullable=False)
+    open = Column(Float, nullable=False)
+    high = Column(Float, nullable=False)
+    low = Column(Float, nullable=False)
+    close = Column(Float, nullable=False)
+    volume = Column(Float)
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "timeframe", "time", name="uix_bars_symbol_tf_time"),
+        Index("ix_bars_symbol", "symbol"),
+        Index("ix_bars_symbol_tf", "symbol", "timeframe"),
+    )
+
+
+class SignalRecord(Base):
+    __tablename__ = "signals"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(32), nullable=False)
+    timeframe = Column(String(24), nullable=False)
+    mode = Column(String(16), nullable=True)
+    analysis_mode = Column(String(24), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utc_now, nullable=False, index=True)
+    signal = Column(String(24), nullable=False)
+    entry = Column(Float)
+    stop = Column(Float)
+    target = Column(Float)
+    rr_ratio = Column(Float)
+    confidence = Column(Float)
+    time_horizon = Column(String(32))
+    reason_short = Column(Text)
+    raw_json = Column(Text)
+
+    __table_args__ = (
+        Index("ix_signals_symbol_tf", "symbol", "timeframe"),
+        Index("ix_signals_symbol_mode", "symbol", "mode"),
+    )
+
+
+if POSTGRES_DSN:
+    try:
+        DB_ENGINE = create_engine(
+            POSTGRES_DSN,
+            pool_pre_ping=True,
+            future=True,
+            echo=POSTGRES_ECHO
+        )
+        SessionLocal = sessionmaker(
+            bind=DB_ENGINE,
+            autoflush=False,
+            autocommit=False,
+            expire_on_commit=False,
+            future=True
+        )
+        Base.metadata.create_all(DB_ENGINE)
+        logging.info("Postgres connected and tables ensured.")
+    except Exception as exc:
+        logging.error("Failed to initialize Postgres: %s", exc)
+        DB_ENGINE = None
+        SessionLocal = None
+else:
+    logging.warning("DATABASE_URL/POSTGRES_DSN not set. Postgres persistence disabled.")
+
+
+@contextmanager
+def session_scope():
+    if SessionLocal is None:
+        yield None
+        return
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def _coerce_dt(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(value), tz=timezone.utc)
+        except Exception:
+            return None
+    if isinstance(value, str):
+        try:
+            cleaned = value.replace("Z", "+00:00") if value.endswith("Z") else value
+            dt = datetime.fromisoformat(cleaned)
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+    return None
+
+
+def persist_bars_to_db(bars: List[Dict[str, Any]]) -> None:
+    if SessionLocal is None or not bars:
+        return
+    rows = []
+    for bar in bars:
+        dt = _coerce_dt(bar.get("time")) or _coerce_dt(bar.get("time_iso"))
+        if dt is None:
+            continue
+        rows.append({
+            "symbol": (bar.get("symbol") or "").strip().upper(),
+            "timeframe": str(bar.get("timeframe") or "").strip(),
+            "time": dt,
+            "open": float(bar.get("open")),
+            "high": float(bar.get("high")),
+            "low": float(bar.get("low")),
+            "close": float(bar.get("close")),
+            "volume": float(bar.get("volume") or 0.0),
+        })
+    if not rows:
+        return
+    try:
+        with session_scope() as session:
+            stmt = pg_insert(Bar).values(rows)
+            update_cols = {
+                "open": stmt.excluded.open,
+                "high": stmt.excluded.high,
+                "low": stmt.excluded.low,
+                "close": stmt.excluded.close,
+                "volume": stmt.excluded.volume,
+            }
+            session.execute(
+                stmt.on_conflict_do_update(
+                    index_elements=["symbol", "timeframe", "time"],
+                    set_=update_cols
+                )
+            )
+    except SQLAlchemyError as exc:
+        logging.error("Failed to persist bars to Postgres: %s", exc)
+
+
+def persist_signal_to_db(symbol: str, timeframe: str, signal_payload: Dict[str, Any]) -> None:
+    if SessionLocal is None or not signal_payload:
+        return
+    created_at = _coerce_dt(
+        signal_payload.get("generated_at")
+        or signal_payload.get("as_of")
+        or _utc_now()
+    )
+    short_reason = signal_payload.get("reason_short")
+    if not short_reason:
+        ctx = signal_payload.get("context")
+        if isinstance(ctx, list):
+            short_reason = "; ".join(str(x) for x in ctx if x)
+        elif ctx is not None:
+            short_reason = str(ctx)
+
+    record = SignalRecord(
+        symbol=symbol.strip().upper(),
+        timeframe=str(timeframe).strip(),
+        mode=signal_payload.get("mode") or signal_payload.get("trade_mode"),
+        analysis_mode=signal_payload.get("analysis_mode"),
+        created_at=created_at or _utc_now(),
+        signal=str(signal_payload.get("signal") or "").upper(),
+        entry=_tv_safe_float(signal_payload.get("entry")),
+        stop=_tv_safe_float(signal_payload.get("stop")),
+        target=_tv_safe_float(signal_payload.get("target")),
+        rr_ratio=_tv_safe_float(signal_payload.get("rr_ratio")) or _tv_safe_float(signal_payload.get("risk_reward")),
+        confidence=_tv_safe_float(signal_payload.get("confidence")),
+        time_horizon=signal_payload.get("time_horizon"),
+        reason_short=short_reason,
+        raw_json=json.dumps(signal_payload, ensure_ascii=False)
+    )
+    try:
+        with session_scope() as session:
+            session.add(record)
+    except SQLAlchemyError as exc:
+        logging.error("Failed to persist signal to Postgres: %s", exc)
+
+
+def fetch_recent_bars_from_db(symbol: str, timeframe: str, limit: int) -> List[Dict[str, Any]]:
+    if SessionLocal is None:
+        return []
+    try:
+        with session_scope() as session:
+            rows = (
+                session.query(Bar)
+                .filter(Bar.symbol == symbol.upper(), Bar.timeframe == timeframe)
+                .order_by(Bar.time.desc())
+                .limit(limit)
+                .all()
+            )
+    except SQLAlchemyError as exc:
+        logging.error("Failed to fetch bars from Postgres: %s", exc)
+        return []
+    result = []
+    for row in reversed(rows):
+        result.append({
+            "symbol": row.symbol,
+            "timeframe": row.timeframe,
+            "time": int(row.time.timestamp()),
+            "time_iso": row.time.isoformat(),
+            "open": row.open,
+            "high": row.high,
+            "low": row.low,
+            "close": row.close,
+            "volume": row.volume,
+        })
+    return result
+
+
+def fetch_latest_signal_from_db(symbol: str, timeframe: str) -> Optional[Dict[str, Any]]:
+    if SessionLocal is None:
+        return None
+    try:
+        with session_scope() as session:
+            row = (
+                session.query(SignalRecord)
+                .filter(SignalRecord.symbol == symbol.upper(), SignalRecord.timeframe == timeframe)
+                .order_by(SignalRecord.created_at.desc())
+                .first()
+            )
+    except SQLAlchemyError as exc:
+        logging.error("Failed to fetch latest signal from Postgres: %s", exc)
+        return None
+    if not row:
+        return None
+    return {
+        "symbol": row.symbol,
+        "timeframe": row.timeframe,
+        "mode": row.mode,
+        "analysis_mode": row.analysis_mode,
+        "generated_at": row.created_at.isoformat(),
+        "signal": row.signal,
+        "entry": row.entry,
+        "stop": row.stop,
+        "target": row.target,
+        "rr_ratio": row.rr_ratio,
+        "confidence": row.confidence,
+        "time_horizon": row.time_horizon,
+        "reason_short": row.reason_short,
+        "raw_json": row.raw_json,
+    }
 
 
 def format_profile_label(profile_key: str) -> str:
@@ -207,6 +496,37 @@ def insert_alert_rows(rows: Iterable[Tuple[Any, ...]]) -> None:
     rows = list(rows)
     if not rows:
         return
+    # Try Postgres first if available
+    if NewSessionLocal is not None:
+        try:
+            with NewSessionLocal() as session:
+                objs = [
+                    AlertHistory(
+                        timestamp_iso=row[0],
+                        date=row[1],
+                        time=row[2],
+                        profile=row[3],
+                        tier=row[4],
+                        ticker=row[5],
+                        entry=row[6],
+                        target=row[7],
+                        ai_target_price=row[8],
+                        stop=row[9],
+                        scan_price=row[10],
+                        potential_gain_pct=row[11],
+                        ai_potential_gain_pct=row[12],
+                        primary_catalyst=row[13],
+                        detailed_analysis=row[14],
+                        model_used=row[15],
+                    )
+                    for row in rows
+                ]
+                session.add_all(objs)
+                session.commit()
+                return
+        except Exception as exc:
+            logging.error("Postgres insert_alert_rows failed, falling back to SQLite: %s", exc)
+
     conn = sqlite3.connect(ALERT_HISTORY_DB)
     try:
         conn.executemany(
@@ -260,6 +580,7 @@ TRADINGVIEW_PROMPT_BAR_LIMIT = max(
 TRADINGVIEW_SIGNAL_MODEL = resolve_pplx_model(os.environ.get("TRADINGVIEW_SIGNAL_MODEL", DEFAULT_PPLX_MODEL))
 TRADINGVIEW_SIGNAL_MAX_WORKERS = max(1, int(os.environ.get("TRADINGVIEW_SIGNAL_MAX_WORKERS", "2")))
 TRADINGVIEW_SIGNAL_COOLDOWN_SECONDS = float(os.environ.get("TRADINGVIEW_SIGNAL_COOLDOWN_SECONDS", "60"))
+BREAKOUT_EVENT_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 def _tv_coerce_bool(value: Any, default: bool = False) -> bool:
@@ -339,7 +660,7 @@ class TradingViewRelay:
             count = len(dq)
         return count, normalized
 
-    def add_bars(self, symbol: str, timeframe: str, bars: List[Dict[str, Any]], replace: bool = False) -> Tuple[int, Optional[Dict[str, Any]]]:
+    def add_bars(self, symbol: str, timeframe: str, bars: List[Dict[str, Any]], replace: bool = False) -> Tuple[int, List[Dict[str, Any]]]:
         key = self.stream_key(symbol, timeframe)
         if key.endswith("::"):
             raise ValueError("Symbol and timeframe are required for TradingView ingestion.")
@@ -348,7 +669,7 @@ class TradingViewRelay:
         for bar in bars:
             normalized_list.append(self._normalize_bar(symbol_val, timeframe_val, bar))
         if not normalized_list:
-            return len(self._bars.get(key, [])), None
+            return len(self._bars.get(key, [])), []
 
         with self._lock:
             dq = self._bars.setdefault(key, deque(maxlen=self.max_bars))
@@ -357,7 +678,7 @@ class TradingViewRelay:
             for entry in normalized_list:
                 dq.append(entry)
             count = len(dq)
-        return count, normalized_list[-1]
+        return count, normalized_list
 
     def get_bars(self, symbol: str, timeframe: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         key = self.stream_key(symbol, timeframe)
@@ -410,7 +731,7 @@ class TradingViewRelay:
         key = self.stream_key(symbol, timeframe)
         with self._lock:
             if metadata:
-                self._metadata[key] = metadata
+                self._metadata[key] = _sanitize_for_json(metadata)
             elif key in self._metadata:
                 del self._metadata[key]
 
@@ -465,6 +786,21 @@ def summarize_tradingview_bars(bars: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _sanitize_for_json(value: Any) -> Any:
+    """Recursively replace NaN/inf with None so json.dumps emits valid JSON."""
+    import math as _math
+
+    if isinstance(value, dict):
+        return {k: _sanitize_for_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_for_json(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_for_json(v) for v in value)
+    if isinstance(value, float):
+        return value if _math.isfinite(value) else None
+    return value
+
+
 def build_tradingview_prompt_payload(symbol: str, timeframe: str, bars: List[Dict[str, Any]]) -> Dict[str, Any]:
     summary = summarize_tradingview_bars(bars)
     context = tradingview_relay.get_metadata(symbol, timeframe)
@@ -477,7 +813,7 @@ def build_tradingview_prompt_payload(symbol: str, timeframe: str, bars: List[Dic
     }
     if context:
         payload["indicators"] = context
-    return payload
+    return _sanitize_for_json(payload)
 
 
 def maybe_queue_tradingview_signal(symbol: str, timeframe: str, force: bool = False) -> Tuple[bool, Optional[str]]:
@@ -522,7 +858,7 @@ def generate_tradingview_signal(symbol: str, timeframe: str, bars: List[Dict[str
         "OHLCV bars forwarded from TradingView (oldest to newest). Prices already match what the trader sees; do NOT "
         "invent new bars. Additional indicator context (EMA/RSI/structure/session) may be present under the "
         "'indicators' key.\n\n"
-        f"{json.dumps(payload, ensure_ascii=False)}\n\n"
+        f"{json.dumps(payload, ensure_ascii=False, allow_nan=False)}\n\n"
         "Return ONLY the JSON object described in the system prompt."
     )
     try:
@@ -546,13 +882,48 @@ def generate_tradingview_signal(symbol: str, timeframe: str, bars: List[Dict[str
     data.setdefault("generated_at", datetime.utcnow().replace(microsecond=0).isoformat() + "Z")
     data.setdefault("bars_used", len(bars))
     tradingview_relay.set_signal(symbol, timeframe, data)
+    try:
+        persist_signal_to_db(symbol, timeframe, data)
+    except Exception:
+        logging.exception("Failed to persist TradingView signal for %s %s", symbol, timeframe)
     logging.info("Stored TradingView AI signal for %s %s: %s", symbol, timeframe, data.get("signal"))
     return data
 
 
 
 def load_alert_history_cache() -> None:
-    """Load all existing history rows from SQLite into the in-process cache for fast access."""
+    """Load all existing history rows from Postgres if available, else SQLite, into cache."""
+    ALERT_HISTORY_CACHE.clear()
+    if NewSessionLocal is not None:
+        try:
+            with NewSessionLocal() as session:
+                rows = (
+                    session.query(AlertHistory)
+                    .order_by(AlertHistory.timestamp_iso.asc())
+                    .all()
+                )
+                ALERT_HISTORY_CACHE.extend({
+                    "timestamp_iso": r.timestamp_iso,
+                    "date": r.date,
+                    "time": r.time,
+                    "profile": r.profile,
+                    "tier": r.tier,
+                    "ticker": r.ticker,
+                    "entry": r.entry,
+                    "target": r.target,
+                    "ai_target_price": r.ai_target_price,
+                    "stop": r.stop,
+                    "scan_price": r.scan_price,
+                    "potential_gain_pct": r.potential_gain_pct,
+                    "ai_potential_gain_pct": r.ai_potential_gain_pct,
+                    "primary_catalyst": r.primary_catalyst,
+                    "detailed_analysis": r.detailed_analysis,
+                    "model_used": r.model_used,
+                } for r in rows)
+                return
+        except Exception as exc:
+            logging.error("Failed to load alert history from Postgres: %s", exc)
+
     conn = sqlite3.connect(ALERT_HISTORY_DB)
     conn.row_factory = sqlite3.Row
     try:
@@ -585,6 +956,41 @@ def load_alert_history_cache() -> None:
 
 
 def fetch_alert_rows_by_ticker(ticker: str, limit: int = 30) -> List[Dict[str, Any]]:
+    if NewSessionLocal is not None:
+        try:
+            with NewSessionLocal() as session:
+                rows = (
+                    session.query(AlertHistory)
+                    .filter(AlertHistory.ticker == ticker)
+                    .order_by(AlertHistory.timestamp_iso.desc())
+                    .limit(limit)
+                    .all()
+                )
+                if rows:
+                    return [
+                        {
+                            "timestamp_iso": r.timestamp_iso,
+                            "date": r.date,
+                            "time": r.time,
+                            "profile": r.profile,
+                            "tier": r.tier,
+                            "ticker": r.ticker,
+                            "entry": r.entry,
+                            "target": r.target,
+                            "ai_target_price": r.ai_target_price,
+                            "stop": r.stop,
+                            "scan_price": r.scan_price,
+                            "potential_gain_pct": r.potential_gain_pct,
+                            "ai_potential_gain_pct": r.ai_potential_gain_pct,
+                            "primary_catalyst": r.primary_catalyst,
+                            "detailed_analysis": r.detailed_analysis,
+                            "model_used": r.model_used,
+                        }
+                        for r in rows
+                    ]
+        except Exception as exc:
+            logging.error("Failed to fetch alert rows from Postgres: %s", exc)
+
     conn = sqlite3.connect(ALERT_HISTORY_DB)
     conn.row_factory = sqlite3.Row
     try:
@@ -630,6 +1036,35 @@ def fetch_alert_rows_by_ticker(ticker: str, limit: int = 30) -> List[Dict[str, A
 
 
 def fetch_all_alert_rows(limit: int = None) -> List[Dict[str, Any]]:
+    if NewSessionLocal is not None:
+        try:
+            with NewSessionLocal() as session:
+                query = session.query(AlertHistory).order_by(AlertHistory.timestamp_iso.desc())
+                if limit:
+                    query = query.limit(int(limit))
+                rows = query.all()
+                if rows:
+                    return [
+                        {
+                            "timestamp_iso": r.timestamp_iso,
+                            "date": r.date,
+                            "time": r.time,
+                            "profile": r.profile,
+                            "tier": r.tier,
+                            "ticker": r.ticker,
+                            "entry": r.entry,
+                            "target": r.target,
+                            "ai_target_price": r.ai_target_price,
+                            "potential_gain_pct": r.potential_gain_pct,
+                            "ai_potential_gain_pct": r.ai_potential_gain_pct,
+                            "scan_price": r.scan_price,
+                            "model_used": r.model_used,
+                        }
+                        for r in rows
+                    ]
+        except Exception as exc:
+            logging.error("Failed to fetch alert rows from Postgres: %s", exc)
+
     conn = sqlite3.connect(ALERT_HISTORY_DB)
     conn.row_factory = sqlite3.Row
     try:
@@ -684,6 +1119,8 @@ def fetch_all_alert_rows(limit: int = None) -> List[Dict[str, Any]]:
 init_alert_history_db()
 ensure_alert_history_columns()
 load_alert_history_cache()
+# Ensure new SQLAlchemy metadata for bars/signals (refactor modules)
+init_new_db()
 
 
 # -------------------------------------------------------------
@@ -1760,7 +2197,7 @@ def _safe_float(val):
 
 
 def record_alert_history(profile: str, data: Dict[str, Any], model_used: str = "") -> None:
-    """Record snapshot of all alerts from a scan into persistent SQLite history."""
+    """Record snapshot of all alerts from a scan into persistent history (Postgres preferred, SQLite fallback)."""
     now = datetime.utcnow()
     date_str = now.strftime("%Y-%m-%d")
     time_str = now.strftime("%H:%M")
@@ -1832,6 +2269,16 @@ def tradingview_webhook():
     except Exception:
         return jsonify({"success": False, "error": "Invalid JSON payload."}), 400
 
+    # Log payload with sensitive fields redacted to trace inbound TradingView data.
+    try:
+        safe_payload = dict(payload or {})
+        for k in ("token", "secret", "password"):
+            if k in safe_payload:
+                safe_payload[k] = "***redacted***"
+        logging.info("TradingView webhook payload: %s", json.dumps(safe_payload)[:2000])
+    except Exception as exc:
+        logging.debug("Failed to log TV payload: %s", exc)
+
     provided_token = (
         request.headers.get("X-Tradingview-Token")
         or request.headers.get("X-TV-Token")
@@ -1849,15 +2296,18 @@ def tradingview_webhook():
 
     bars_payload = payload.get("bars")
     multi_bar_mode = isinstance(bars_payload, list) and len(bars_payload) > 0
+    normalized_list: List[Dict[str, Any]] = []
 
     if multi_bar_mode:
         try:
-            bar_count, normalized = tradingview_relay.add_bars(
+            bar_count, normalized_list = tradingview_relay.add_bars(
                 symbol,
                 timeframe,
                 bars_payload,
                 replace=True
             )
+            persist_bars_to_db(normalized_list)
+            last_bar = normalized_list[-1] if normalized_list else {}
         except ValueError as exc:
             return jsonify({"success": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -1888,6 +2338,8 @@ def tradingview_webhook():
                     "volume": volume_val,
                 }
             )
+            persist_bars_to_db([normalized])
+            last_bar = normalized
         except ValueError as exc:
             return jsonify({"success": False, "error": str(exc)}), 400
         except Exception as exc:
@@ -1898,7 +2350,7 @@ def tradingview_webhook():
         "TradingView webhook bar captured: %s %s close=%s bars_cached=%d",
         symbol,
         timeframe,
-        normalized.get("close"),
+        last_bar.get("close"),
         bar_count
     )
 
@@ -1950,7 +2402,7 @@ def tradingview_webhook():
             "symbol": symbol,
             "timeframe": timeframe,
             "bars_cached": bar_count,
-            "last_bar": normalized,
+            "last_bar": last_bar,
             "queued_signal": queued,
             "queue_message": queue_message,
             "signal_inflight": inflight,
@@ -1973,7 +2425,11 @@ def tradingview_signals_api():
 
     if symbol and timeframe:
         bars = tradingview_relay.get_bars(symbol, timeframe, limit=limit)
+        if not bars:
+            bars = fetch_recent_bars_from_db(symbol, timeframe, limit)
         latest_signal = tradingview_relay.get_signal(symbol, timeframe)
+        if latest_signal is None:
+            latest_signal = fetch_latest_signal_from_db(symbol, timeframe)
         context_snapshot = tradingview_relay.get_metadata(symbol, timeframe)
         key = tradingview_relay.stream_key(symbol, timeframe)
         with TRADINGVIEW_SIGNAL_LOCK:
@@ -2941,6 +3397,46 @@ def merge_scanner_data(primary: Dict[str, Any], fallback: Dict[str, Any]) -> Dic
     return dedupe_alerts(merged)
 
 
+def persist_high_growth_candidates(candidates: List[Dict[str, Any]], timestamp_iso: str) -> None:
+    """Store high-growth candidates into Postgres if configured."""
+    if NewSessionLocal is None:
+        return
+    if not candidates:
+        return
+    try:
+        with NewSessionLocal() as session:
+            objs = []
+            for c in candidates:
+                if not isinstance(c, dict):
+                    continue
+                ticker = (c.get("ticker") or "").strip().upper()
+                if not ticker:
+                    continue
+                objs.append(
+                    HighGrowthCandidate(
+                        timestamp_iso=timestamp_iso,
+                        ticker=ticker,
+                        company_name=c.get("company_name"),
+                        sector=c.get("sector"),
+                        market_cap=c.get("market_cap"),
+                        growth_metric=c.get("growth_metric"),
+                        growth_period=c.get("growth_period"),
+                        catalyst=c.get("catalyst"),
+                        data_source=c.get("data_source"),
+                        institutional_ownership=c.get("institutional_ownership"),
+                        risk_reward=c.get("risk_reward"),
+                        technical_indicators=c.get("technical_indicators"),
+                        notes=c.get("notes"),
+                        raw_json=json.dumps(c, ensure_ascii=False),
+                    )
+                )
+            if objs:
+                session.add_all(objs)
+                session.commit()
+    except Exception as exc:
+        logging.error("Failed to persist high growth candidates: %s", exc)
+
+
 def build_user_prompt(profile: str) -> str:
     if profile == "high_growth":
         return (
@@ -3128,6 +3624,10 @@ def run_scanner_api():
 
         if is_growth_profile:
             data = normalize_high_growth_payload(primary)
+            try:
+                persist_high_growth_candidates(data.get("candidates") or [], data.get("timestamp"))
+            except Exception as exc:
+                logging.error("Persist high growth candidates failed: %s", exc)
         else:
             data = dedupe_alerts(primary)
             if fallback_used:
@@ -3174,6 +3674,154 @@ def run_scanner_api():
 @auth.login_required
 def dashboard_view():
     return render_template("index.html")
+
+
+@app.route("/tv-webhook", methods=["POST"])
+def tv_webhook():
+    payload = request.get_json(silent=True) or {}
+    symbol = (payload.get("symbol") or payload.get("ticker") or "").strip().upper()
+    timeframe = str(payload.get("timeframe") or payload.get("tf") or "").strip()
+    if not symbol or not timeframe:
+        return jsonify({"success": False, "error": "symbol and timeframe are required."}), 400
+
+    bar = save_bar_from_payload(payload)
+    if bar is None:
+        return jsonify({"success": False, "error": "Invalid or incomplete OHLC/time data."}), 400
+
+    breakout_context = payload.get("breakout_context") or {}
+    event = payload.get("event")
+    cache_key = f"{symbol}::{timeframe}"
+    BREAKOUT_EVENT_CACHE[cache_key] = {
+        "event": event,
+        "breakout_context": breakout_context,
+    }
+
+    return jsonify({"status": "ok", "symbol": symbol, "timeframe": timeframe, "cached_event": bool(event)})
+
+
+@app.route("/signals/run", methods=["POST"])
+def signals_run():
+    payload = request.get_json(silent=True) or {}
+    symbol = (payload.get("symbol") or "").strip().upper()
+    timeframe = str(payload.get("timeframe") or "").strip()
+    mode = (payload.get("mode") or "day").strip().lower()
+    analysis_mode = (payload.get("analysis_mode") or "technical").strip().lower()
+    if not symbol or not timeframe or mode not in {"day", "swing"} or analysis_mode not in {"technical", "news_tech"}:
+        return jsonify({"success": False, "error": "Invalid symbol/timeframe/mode/analysis_mode."}), 400
+
+    cache_key = f"{symbol}::{timeframe}"
+    breakout_event = BREAKOUT_EVENT_CACHE.get(cache_key)
+    signal_row = run_ai_signal(symbol, timeframe, mode, analysis_mode, breakout_event)
+    if signal_row is None:
+        return jsonify({"success": False, "error": "Failed to generate signal (missing bars or AI error)."}), 500
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "id": signal_row.id,
+            "symbol": signal_row.symbol,
+            "timeframe": signal_row.timeframe,
+            "mode": signal_row.mode,
+            "analysis_mode": signal_row.analysis_mode,
+            "created_at": signal_row.created_at.isoformat() if signal_row.created_at else None,
+            "signal": signal_row.signal,
+            "entry": signal_row.entry,
+            "stop": signal_row.stop,
+            "target": signal_row.target,
+            "rr_ratio": signal_row.rr_ratio,
+            "confidence": signal_row.confidence,
+            "time_horizon": signal_row.time_horizon,
+            "reason_short": signal_row.reason_short,
+        }
+    })
+
+
+@app.route("/signals/latest", methods=["GET"])
+def signals_latest():
+    symbol = (request.args.get("symbol") or "").strip().upper()
+    timeframe = (request.args.get("timeframe") or "").strip()
+    mode = (request.args.get("mode") or "").strip().lower()
+    analysis_mode = (request.args.get("analysis_mode") or "").strip().lower()
+
+    if not symbol or not mode or not analysis_mode:
+        return jsonify({"success": False, "error": "symbol, mode, and analysis_mode are required."}), 400
+
+    if NewSessionLocal is None:
+        return jsonify({"success": False, "error": "Database is not configured."}), 500
+
+    try:
+        with NewSessionLocal() as session:
+            query = session.query(SignalRecordModel).filter(
+                SignalRecordModel.symbol == symbol,
+                SignalRecordModel.mode == mode,
+                SignalRecordModel.analysis_mode == analysis_mode,
+            )
+            if timeframe:
+                query = query.filter(SignalRecordModel.timeframe == timeframe)
+            row = query.order_by(SignalRecordModel.created_at.desc()).first()
+            if not row:
+                return jsonify({"success": True, "data": None})
+            data = {
+                "symbol": row.symbol,
+                "timeframe": row.timeframe,
+                "mode": row.mode,
+                "analysis_mode": row.analysis_mode,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "signal": row.signal,
+                "entry": row.entry,
+                "stop": row.stop,
+                "target": row.target,
+                "rr_ratio": row.rr_ratio,
+                "confidence": row.confidence,
+                "time_horizon": row.time_horizon,
+                "reason_short": row.reason_short,
+            }
+            return jsonify({"success": True, "data": data})
+    except Exception:
+        return jsonify({"success": False, "error": "Failed to fetch latest signal."}), 500
+
+
+@app.route("/signals/recent", methods=["GET"])
+def signals_recent():
+    limit_param = request.args.get("limit")
+    try:
+        limit = int(limit_param) if limit_param else 50
+    except ValueError:
+        limit = 50
+    limit = max(1, min(limit, 200))
+
+    if NewSessionLocal is None:
+        return jsonify({"success": False, "error": "Database is not configured."}), 500
+
+    try:
+        with NewSessionLocal() as session:
+            rows = (
+                session.query(SignalRecordModel)
+                .order_by(SignalRecordModel.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            data = [
+                {
+                    "symbol": row.symbol,
+                    "timeframe": row.timeframe,
+                    "mode": row.mode,
+                    "analysis_mode": row.analysis_mode,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "signal": row.signal,
+                    "entry": row.entry,
+                    "stop": row.stop,
+                    "target": row.target,
+                    "rr_ratio": row.rr_ratio,
+                    "confidence": row.confidence,
+                    "time_horizon": row.time_horizon,
+                    "reason_short": row.reason_short,
+                }
+                for row in rows
+            ]
+            return jsonify(data)
+    except Exception:
+        return jsonify({"success": False, "error": "Failed to fetch recent signals."}), 500
 
 
 @app.errorhandler(HTTPException)

@@ -6,3 +6,5 @@ requests
 lxml
 openai
 yfinance
+SQLAlchemy>=2.0
+psycopg2-binary
