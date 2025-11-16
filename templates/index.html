@@ -551,6 +551,12 @@
             </button>
         </li>
         <li class="nav-item" role="presentation">
+            <button class="nav-link" id="breakout-history-tab" data-bs-toggle="tab" data-bs-target="#breakout-history-pane"
+                    type="button" role="tab">
+                Breakout History
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
             <button class="nav-link" id="tv-tab" data-bs-toggle="tab" data-bs-target="#tv-pane"
                     type="button" role="tab">
                 TradingView Signals
@@ -1212,6 +1218,49 @@
             </div>
         </div>
 
+        <!-- ===================== BREAKOUT HISTORY TAB ===================== -->
+        <div class="tab-pane fade" id="breakout-history-pane" role="tabpanel" aria-labelledby="breakout-history-tab">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0">Breakout History</h5>
+                        <small class="text-muted">Live breakout events from TradingView, including AI verdicts when available.</small>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <small class="text-muted" id="breakoutStatus">Idle</small>
+                        <button class="btn btn-sm btn-outline-light" id="breakoutRefreshBtn">Refresh</button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-hover mb-0 align-middle">
+                            <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Symbol</th>
+                                <th>TF</th>
+                                <th>Event</th>
+                                <th>Trigger</th>
+                                <th>Close</th>
+                                <th>RVOL</th>
+                                <th>Structure</th>
+                                <th>Signal</th>
+                                <th>Entry</th>
+                                <th>Stop</th>
+                                <th>Target</th>
+                            </tr>
+                            </thead>
+                            <tbody id="breakoutEventsBody">
+                            <tr>
+                                <td colspan="12" class="text-center text-muted py-3">No breakout events yet.</td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- ===================== TRADINGVIEW TAB ===================== -->
         <div class="tab-pane fade" id="tv-pane" role="tabpanel" aria-labelledby="tv-tab">
             <div class="card mb-3">
@@ -1251,12 +1300,14 @@
                                         <th>Last Price</th>
                                         <th>Bars</th>
                                         <th>Signal</th>
+                                        <th>RR</th>
+                                        <th>Conf</th>
                                         <th>Updated</th>
                                     </tr>
                                     </thead>
                                     <tbody id="tvStreamsBody">
                                     <tr>
-                                        <td colspan="5" class="text-center text-muted py-3">
+                                        <td colspan="7" class="text-center text-muted py-3">
                                             Waiting for TradingView webhook data.
                                         </td>
                                     </tr>
@@ -1267,11 +1318,46 @@
                     </div>
                 </div>
                 <div class="col-12 col-lg-7">
-                    <div class="card h-100" id="tvSignalCard">
+                    <div class="card h-100 mb-3" id="tvSignalCard">
                         <div class="card-body">
                             <p class="text-center text-muted mb-0">
                                 Select a stream on the left to load its latest AI decision packet.
                             </p>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-0">Live Breakouts</h6>
+                                <small class="text-muted">Today by default; toggle 3d for context.</small>
+                            </div>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button class="btn btn-outline-light active" id="liveBreakoutsToday" type="button">Today</button>
+                                <button class="btn btn-outline-light" id="liveBreakouts3d" type="button">3 days</button>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-dark table-striped table-hover mb-0 small align-middle">
+                                    <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Symbol</th>
+                                        <th>TF</th>
+                                        <th>Event</th>
+                                        <th>Trigger</th>
+                                        <th>RVOL</th>
+                                        <th>AI</th>
+                                        <th>Conf</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="liveBreakoutsBody">
+                                    <tr>
+                                        <td colspan="8" class="text-center text-muted py-3">No live breakouts yet.</td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3188,7 +3274,7 @@
         if (!tvStreams.length) {
             tvStreamsBody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="text-center text-muted py-3">
+                    <td colspan="7" class="text-center text-muted py-3">
                         Waiting for TradingView webhook data.
                     </td>
                 </tr>
@@ -3210,6 +3296,19 @@
             const barsVal = Number(stream.bar_count);
             const bars = Number.isFinite(barsVal) ? barsVal : '—';
             const signalLabel = (stream.latest_signal || '').toUpperCase() || '—';
+            const rrVal = stream.latest_rr;
+            const confVal = stream.latest_confidence;
+            const rrText = rrVal != null && rrVal !== '' ? Number(rrVal).toFixed(1) + 'x' : '—';
+            const confText = Number.isFinite(confVal) ? `${Number(confVal).toFixed(0)}%` : '—';
+            const badgeClass = signalLabel === 'BUY'
+                ? 'bg-success-subtle text-success'
+                : signalLabel === 'SELL'
+                    ? 'bg-danger-subtle text-danger'
+                    : 'bg-secondary-subtle text-dark';
+            const highlight = signalLabel !== 'HOLD' || (Number.isFinite(confVal) && confVal >= 60);
+            if (highlight) {
+                tr.classList.add('table-warning');
+            }
             tr.innerHTML = `
                 <td>
                     <span class="ticker-chip">${(stream.symbol || '').toUpperCase()}</span>
@@ -3217,7 +3316,9 @@
                 </td>
                 <td>${price}</td>
                 <td>${bars}</td>
-                <td>${signalLabel}</td>
+                <td><span class="badge ${badgeClass}">${signalLabel}</span></td>
+                <td>${rrText}</td>
+                <td>${confText}</td>
                 <td class="small text-muted" title="${updatedFull}">${updatedLabel}</td>
             `;
             tr.addEventListener('click', () => {
@@ -3320,12 +3421,14 @@
         if (!tvSignalCard) return;
         const signal = payload.latest_signal || {};
         const action = (signal.signal || 'HOLD').toUpperCase();
-        const entry = formatTvPrice(signal.entry);
-        const stop = formatTvPrice(signal.stop);
-        const target = formatTvPrice(signal.target);
-        const riskReward = formatTvNumber(signal.risk_reward);
+        const isHold = action === 'HOLD';
+        const entry = isHold ? '—' : formatTvPrice(signal.entry);
+        const stop = isHold ? '—' : formatTvPrice(signal.stop);
+        const target = isHold ? '—' : formatTvPrice(signal.target);
+        const riskReward = isHold ? '—' : formatTvNumber(signal.risk_reward);
         const confidenceVal = Number(signal.confidence);
         const confidenceText = Number.isFinite(confidenceVal) ? `${confidenceVal}/100` : '—';
+        const confidencePct = Number.isFinite(confidenceVal) ? Number(confidenceVal).toFixed(0) + '%' : '—';
         const positionSize = signal.position_size_pct !== undefined && signal.position_size_pct !== null
             ? `${formatTvNumber(signal.position_size_pct, 1)}%`
             : '—';
@@ -3346,11 +3449,13 @@
         const windowMinutes = (firstDate && lastDate)
             ? Math.max(0, Math.round((lastDate - firstDate) / 60000))
             : null;
-        const contextItems = Array.isArray(signal.context) && signal.context.length
-            ? signal.context.map(item => `<li>${item}</li>`).join('')
+        const contextList = Array.isArray(signal.context) ? signal.context.slice(0, 3) : [];
+        const contextItems = contextList.length
+            ? contextList.map(item => `<li>${item}</li>`).join('')
             : '<li class="text-muted">No context bullets provided.</li>';
-        const invalidationItems = Array.isArray(signal.invalidations) && signal.invalidations.length
-            ? signal.invalidations.map(item => `<li>${item}</li>`).join('')
+        const invalidationItemsRaw = Array.isArray(signal.invalidations) ? signal.invalidations.slice(0, 3) : [];
+        const invalidationItems = invalidationItemsRaw.length
+            ? invalidationItemsRaw.map(item => `<li>${item}</li>`).join('')
             : '<li class="text-muted">No invalidations provided.</li>';
         const meta = payload.meta || {};
         const badgeClass = action === 'BUY'
@@ -3360,20 +3465,161 @@
                 : 'badge bg-secondary-subtle text-dark';
         const contextSnapshot = payload.context || {};
         const indicatorSections = [];
-        const indicatorKeys = ['trend', 'momentum', 'volatility', 'volume_info', 'structure', 'session', 'risk_settings'];
-        indicatorKeys.forEach(key => {
-            const block = contextSnapshot[key];
-            if (!block || typeof block !== 'object') return;
-            const rows = Object.entries(block)
-                .map(([k, v]) => `<div><span class="text-muted">${k}:</span> ${formatIndicatorValue(v)}</div>`)
-                .join('');
+
+        function addSection(title, summaryLines, rawLines) {
+            const summaryHtml = summaryLines.length
+                ? summaryLines.map(line => `<li>${line}</li>`).join('')
+                : '<li class="text-muted">No summary available.</li>';
+            const rawHtml = rawLines.length
+                ? `<div class="small text-muted mt-2">${rawLines.join(' • ')}</div>`
+                : '';
             indicatorSections.push(`
                 <div class="col-12 col-md-6">
-                    <h6 class="mb-2 text-capitalize">${key.replace(/_/g, ' ')}</h6>
-                    ${rows || '<p class="text-muted small mb-0">No data.</p>'}
+                    <h6 class="mb-2">${title}</h6>
+                    <ul class="small mb-1">${summaryHtml}</ul>
+                    ${rawHtml}
                 </div>
             `);
-        });
+        }
+
+        // Trend section
+        const trend = contextSnapshot.trend || {};
+        if (Object.keys(trend).length) {
+            const fast = Number(trend.ema_fast);
+            const mid = Number(trend.ema_mid);
+            const slow = Number(trend.ema_slow);
+            const lastCloseNum = lastBar ? Number(lastBar.close) : null;
+            const stackBear = Number.isFinite(fast) && Number.isFinite(mid) && Number.isFinite(slow) && fast < mid && mid < slow;
+            const stackBull = Number.isFinite(fast) && Number.isFinite(mid) && Number.isFinite(slow) && fast > mid && mid > slow;
+            const regime = (trend.trend_regime || '').toString();
+            const summary = [];
+            if (stackBear) summary.push('EMAs stacked bearish (fast < mid < slow)');
+            else if (stackBull) summary.push('EMAs stacked bullish (fast > mid > slow)');
+            if (lastCloseNum !== null && Number.isFinite(fast) && Number.isFinite(mid) && Number.isFinite(slow)) {
+                const belowAll = lastCloseNum < Math.min(fast, mid, slow);
+                const aboveAll = lastCloseNum > Math.max(fast, mid, slow);
+                if (belowAll) summary.push('Price below all EMAs');
+                else if (aboveAll) summary.push('Price above all EMAs');
+            }
+            if (regime) summary.push(`Regime: ${regime}`);
+            const slope = (Number.isFinite(slow) && Number.isFinite(fast)) ? (slow - fast) : null;
+            if (Number.isFinite(slope)) summary.push(`Slope spread: ${slope.toFixed(1)} pts`);
+            addSection(
+                'Trend',
+                summary,
+                [
+                    Number.isFinite(fast) ? `EMA fast: ${fast.toFixed(2)}` : null,
+                    Number.isFinite(mid) ? `EMA mid: ${mid.toFixed(2)}` : null,
+                    Number.isFinite(slow) ? `EMA slow: ${slow.toFixed(2)}` : null
+                ].filter(Boolean)
+            );
+        }
+
+        // Momentum section
+        const momentum = contextSnapshot.momentum || {};
+        if (Object.keys(momentum).length) {
+            const macd = Number(momentum.macd);
+            const macdSig = Number(momentum.macd_signal);
+            const macdHist = Number(momentum.macd_hist);
+            const rsi = Number(momentum.rsi_14);
+            const summary = [];
+            if (Number.isFinite(macd) && Number.isFinite(macdHist)) {
+                const histTone = macdHist > 0 ? 'rising' : 'falling';
+                summary.push(`MACD ${macd.toFixed(1)} with histogram ${macdHist.toFixed(1)} (${histTone})`);
+            }
+            if (Number.isFinite(rsi)) summary.push(`RSI ${rsi.toFixed(1)} → ${rsi < 45 ? 'bearish tilt' : rsi > 55 ? 'bullish tilt' : 'neutral'}`);
+            addSection(
+                'Momentum',
+                summary,
+                [
+                    Number.isFinite(macd) ? `MACD: ${macd.toFixed(2)}` : null,
+                    Number.isFinite(macdSig) ? `Signal: ${macdSig.toFixed(2)}` : null,
+                    Number.isFinite(macdHist) ? `Hist: ${macdHist.toFixed(2)}` : null,
+                    Number.isFinite(rsi) ? `RSI(14): ${rsi.toFixed(2)}` : null
+                ].filter(Boolean)
+            );
+        }
+
+        // Volatility section
+        const volatility = contextSnapshot.volatility || {};
+        if (Object.keys(volatility).length) {
+            const atr = Number(volatility.atr_14);
+            const atrPct = Number(volatility.atr_percent_of_price);
+            const summary = [];
+            if (Number.isFinite(atr) || Number.isFinite(atrPct)) {
+                summary.push(`ATR(14): ${Number.isFinite(atr) ? atr.toFixed(1) : '—'} (${Number.isFinite(atrPct) ? (atrPct * 100).toFixed(2) + '% of price' : '—'})`);
+            }
+            addSection(
+                'Volatility',
+                summary,
+                [
+                    Number.isFinite(atr) ? `ATR14: ${atr.toFixed(2)}` : null,
+                    Number.isFinite(atrPct) ? `ATR%: ${(atrPct * 100).toFixed(3)}%` : null,
+                ].filter(Boolean)
+            );
+        }
+
+        // Volume section
+        const volumeInfo = contextSnapshot.volume_info || {};
+        if (Object.keys(volumeInfo).length) {
+            const rvol = Number(volumeInfo.relative_volume);
+            const volSpike = volumeInfo.vol_spike_flag;
+            const summary = [];
+            if (Number.isFinite(rvol)) summary.push(`RVOL ${rvol.toFixed(2)}× ${rvol >= 1 ? '(elevated)' : '(below avg)'}`);
+            if (volSpike !== undefined) summary.push(volSpike ? 'Volume spike detected' : 'No volume spike');
+            addSection(
+                'Volume',
+                summary,
+                [
+                    Number.isFinite(rvol) ? `RVOL: ${rvol.toFixed(4)}` : null,
+                    volSpike !== undefined ? `Volume spike: ${volSpike}` : null,
+                ].filter(Boolean)
+            );
+        }
+
+        // Session section
+        const sessionInfo = contextSnapshot.session || {};
+        if (Object.keys(sessionInfo).length) {
+            const dow = sessionInfo.day_of_week;
+            const sessionType = sessionInfo.session_type;
+            const timeOfDay = sessionInfo.time_of_day;
+            const summary = [];
+            const dowNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            if (typeof dow === 'number' && dow >= 0 && dow < 7) summary.push(dowNames[dow]);
+            if (sessionType) summary.push(`${sessionType} session`);
+            if (timeOfDay) {
+                const t = new Date(Number(timeOfDay));
+                summary.push(`Local time about ${t.getHours().toString().padStart(2, '0')}:${t.getMinutes().toString().padStart(2, '0')}`);
+            }
+            addSection(
+                'Session',
+                summary,
+                [
+                    sessionType ? `session_type: ${sessionType}` : null,
+                    dow !== undefined ? `day_of_week: ${dow}` : null,
+                    timeOfDay ? `time_of_day: ${timeOfDay}` : null,
+                ].filter(Boolean)
+            );
+        }
+
+        // Risk settings
+        const risk = contextSnapshot.risk_settings || {};
+        if (Object.keys(risk).length) {
+            const riskPct = risk.account_risk_percent;
+            const minRR = risk.min_rr_ratio;
+            const summary = [];
+            if (riskPct !== undefined) summary.push(`Account risk: ${riskPct}%`);
+            if (minRR !== undefined) summary.push(`Min RR: ${minRR}×`);
+            addSection(
+                'Risk Settings',
+                summary,
+                [
+                    riskPct !== undefined ? `account_risk_percent: ${riskPct}` : null,
+                    minRR !== undefined ? `min_rr_ratio: ${minRR}` : null,
+                ].filter(Boolean)
+            );
+        }
+
         const contextMeta = contextSnapshot.meta || {};
         const contextMetaLabel = contextMeta.bar_time
             ? `Snapshot: ${formatTvTimestampFull(contextMeta.bar_time)}`
@@ -3385,11 +3631,11 @@
             <div class="card-header d-flex justify-content-between align-items-center">
                 <div>
                     <h5 class="mb-0">${(payload.symbol || '').toUpperCase()} • ${payload.timeframe || ''}</h5>
-                    <small class="text-muted">Generated ${formatTvTimestampFull(signal.generated_at)}</small>
+                    <small class="text-muted">Generated ${formatTvTimestampFull(signal.generated_at) || '-'}</small>
                 </div>
                 <div class="text-end">
                     <span class="${badgeClass} px-3 py-2 text-uppercase">${action}</span>
-                    <div class="small text-muted">Confidence: ${confidenceText}</div>
+                    <div class="small text-muted">Confidence: ${confidencePct}</div>
                 </div>
             </div>
             <div class="card-body">
@@ -3453,6 +3699,84 @@
     });
     if (tvTab?.classList.contains('active')) {
         fetchTradingviewStreams();
+    }
+
+    // ------------- Live Breakouts (compact card) -------------
+    const liveBreakoutsBody = document.getElementById('liveBreakoutsBody');
+    const liveBreakoutsToday = document.getElementById('liveBreakoutsToday');
+    const liveBreakouts3d = document.getElementById('liveBreakouts3d');
+    let liveBreakoutsWindow = '1d';
+    let liveBreakoutsRows = [];
+
+    function renderLiveBreakouts() {
+        if (!liveBreakoutsBody) return;
+        liveBreakoutsBody.innerHTML = '';
+        if (!Array.isArray(liveBreakoutsRows) || !liveBreakoutsRows.length) {
+            liveBreakoutsBody.innerHTML = `
+                <tr><td colspan="8" class="text-center text-muted py-3">No live breakouts yet.</td></tr>
+            `;
+            return;
+        }
+        liveBreakoutsRows.forEach(item => {
+            const sig = item.signal || {};
+            const badgeClass = sig.signal === 'BUY'
+                ? 'badge bg-success-subtle text-success'
+                : sig.signal === 'SELL'
+                    ? 'badge bg-danger-subtle text-danger'
+                    : 'badge bg-secondary-subtle text-dark';
+            const confText = Number.isFinite(sig.confidence) ? `${Number(sig.confidence).toFixed(0)}%` : '—';
+            const rvolText = item.relative_volume != null ? Number(item.relative_volume).toFixed(2) : '—';
+            const triggerText = item.trigger_price != null ? formatTvPrice(item.trigger_price) : '—';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="small text-muted">${formatTvTimestampShort(item.bar_time)}</td>
+                <td>${(item.symbol || '').toUpperCase()}</td>
+                <td>${item.timeframe || ''}</td>
+                <td class="text-uppercase">${item.event || ''}</td>
+                <td>${triggerText}</td>
+                <td>${rvolText}</td>
+                <td><span class="${badgeClass}">${(sig.signal || '—').toUpperCase()}</span></td>
+                <td>${confText}</td>
+            `;
+            liveBreakoutsBody.appendChild(tr);
+        });
+    }
+
+    async function fetchLiveBreakouts() {
+        if (!liveBreakoutsBody) return;
+        liveBreakoutsBody.innerHTML = `
+            <tr><td colspan="8" class="text-center text-muted py-3">Loading…</td></tr>
+        `;
+        try {
+            const resp = await fetch(`/api/breakouts/live?window=${encodeURIComponent(liveBreakoutsWindow)}&limit=50`);
+            const payload = await resp.json();
+            if (!payload.success) {
+                liveBreakoutsBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-3">${payload.error || 'Failed to load.'}</td></tr>`;
+                return;
+            }
+            liveBreakoutsRows = payload.data || [];
+            renderLiveBreakouts();
+        } catch (err) {
+            console.error('live breakouts error', err);
+            liveBreakoutsBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-3">Error loading breakouts.</td></tr>`;
+        }
+    }
+
+    liveBreakoutsToday?.addEventListener('click', () => {
+        liveBreakoutsWindow = '1d';
+        liveBreakoutsToday.classList.add('active');
+        liveBreakouts3d?.classList.remove('active');
+        fetchLiveBreakouts();
+    });
+    liveBreakouts3d?.addEventListener('click', () => {
+        liveBreakoutsWindow = '3d';
+        liveBreakouts3d.classList.add('active');
+        liveBreakoutsToday?.classList.remove('active');
+        fetchLiveBreakouts();
+    });
+
+    if (liveBreakoutsBody) {
+        fetchLiveBreakouts();
     }
 
     // ------------- History tab logic -------------
@@ -4200,6 +4524,86 @@
     });
     if (historyTab?.classList.contains('active')) {
         fetchHistorySummary();
+    }
+
+    // ------------- Breakout history tab -------------
+    const breakoutHistoryTab = document.getElementById('breakout-history-tab');
+    const breakoutEventsBody = document.getElementById('breakoutEventsBody');
+    const breakoutRefreshBtn = document.getElementById('breakoutRefreshBtn');
+    const breakoutStatus = document.getElementById('breakoutStatus');
+    let breakoutEvents = [];
+
+    function setBreakoutStatus(text, isError = false) {
+        if (!breakoutStatus) return;
+        breakoutStatus.textContent = text;
+        breakoutStatus.className = `text-${isError ? 'danger' : 'muted'} small`;
+    }
+
+    function renderBreakoutTable() {
+        if (!breakoutEventsBody) return;
+        breakoutEventsBody.innerHTML = '';
+        if (!Array.isArray(breakoutEvents) || !breakoutEvents.length) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 12;
+            td.className = 'text-center text-muted py-3';
+            td.textContent = 'No breakout events yet.';
+            tr.appendChild(td);
+            breakoutEventsBody.appendChild(tr);
+            return;
+        }
+        breakoutEvents.forEach(ev => {
+            const tr = document.createElement('tr');
+            const sig = ev.signal || {};
+            const cells = [
+                formatEST(ev.bar_time),
+                ev.symbol || '',
+                ev.timeframe || '',
+                ev.event || '',
+                formatNumber(ev.trigger_price),
+                formatNumber(ev.close),
+                ev.relative_volume != null ? ev.relative_volume.toFixed(2) : '',
+                ev.structure || '',
+                sig.signal || '',
+                sig.entry != null ? Number(sig.entry).toFixed(2) : '',
+                sig.stop != null ? Number(sig.stop).toFixed(2) : '',
+                sig.target != null ? Number(sig.target).toFixed(2) : ''
+            ];
+            cells.forEach(text => {
+                const td = document.createElement('td');
+                td.textContent = text || '-';
+                tr.appendChild(td);
+            });
+            breakoutEventsBody.appendChild(tr);
+        });
+    }
+
+    async function fetchBreakoutEvents() {
+        setBreakoutStatus('Loading...');
+        try {
+            const resp = await fetch('/api/breakouts/events?limit=100');
+            if (!resp.ok) {
+                setBreakoutStatus('Failed to load', true);
+                return;
+            }
+            const payload = await resp.json();
+            breakoutEvents = payload?.data || [];
+            setBreakoutStatus(`Loaded ${breakoutEvents.length}`);
+            renderBreakoutTable();
+        } catch (err) {
+            console.error('breakout history error', err);
+            setBreakoutStatus('Error', true);
+        }
+    }
+
+    breakoutRefreshBtn?.addEventListener('click', () => fetchBreakoutEvents());
+    breakoutHistoryTab?.addEventListener('shown.bs.tab', () => {
+        if (!breakoutEvents.length) {
+            fetchBreakoutEvents();
+        }
+    });
+    if (breakoutHistoryTab?.classList.contains('active')) {
+        fetchBreakoutEvents();
     }
 
     // ------------- Persist active tab across reloads -------------

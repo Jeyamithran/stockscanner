@@ -25,7 +25,14 @@ from openai import OpenAI
 import xml.etree.ElementTree as ET
 from database import init_db as init_new_db
 from database import SessionLocal as NewSessionLocal, engine as NewEngine
-from models import Signal as SignalRecordModel, AlertHistory, HighGrowthCandidate, TradingviewEvent
+from models import (
+    Signal as SignalRecordModel,
+    AlertHistory,
+    HighGrowthCandidate,
+    TradingviewEvent,
+    BreakoutEvent,
+    BreakoutWatchlist,
+)
 from services.bars import save_bar_from_payload, get_recent_bars
 from services.signals import run_ai_signal
 from sqlalchemy import (
@@ -42,7 +49,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker, joinedload
 try:
     import yfinance as yf
 except ImportError:
@@ -716,6 +723,11 @@ class TradingViewRelay:
                 symbol, timeframe = key.split("::", 1)
                 last_bar = dq[-1] if dq else None
                 signal = self._signals.get(key)
+                latest_rr = None
+                latest_conf = None
+                if signal:
+                    latest_rr = signal.get("risk_reward") or signal.get("rr_ratio")
+                    latest_conf = signal.get("confidence")
                 metadata = self._metadata.get(key)
                 snapshots.append({
                     "symbol": symbol,
@@ -725,6 +737,8 @@ class TradingViewRelay:
                     "last_price": last_bar.get("close") if last_bar else None,
                     "latest_signal": signal.get("signal") if signal else None,
                     "latest_signal_time": signal.get("generated_at") if signal else None,
+                    "latest_rr": latest_rr,
+                    "latest_confidence": latest_conf,
                     "has_context": bool(metadata),
                 })
         return snapshots
@@ -2306,6 +2320,139 @@ def tradingview_webhook():
     if TRADINGVIEW_WEBHOOK_TOKEN and provided_token != TRADINGVIEW_WEBHOOK_TOKEN:
         return jsonify({"success": False, "error": "Unauthorized webhook call."}), 403
 
+    source = str(payload.get("source") or "").strip().lower()
+
+    # --- Branch: daily breakout watchlist ingest ---
+    if source == "breakout_watchlist":
+        alerts = payload.get("alerts") or []
+        if not isinstance(alerts, list) or not alerts:
+            return jsonify({"success": False, "error": "alerts list required for breakout_watchlist."}), 400
+        as_of_date = _parse_watchlist_date(payload.get("batch_date")) or datetime.now(timezone.utc).date()
+        timeframe = (payload.get("timeframe") or "D").strip() or "D"
+        mode = (payload.get("mode") or "swing").strip().lower() or "swing"
+        inserted, updated, err = persist_breakout_watchlist_batch(as_of_date, timeframe, mode, alerts)
+        status_code = 200 if err is None else 500
+        return jsonify({
+            "success": err is None,
+            "as_of_date": as_of_date.isoformat(),
+            "timeframe": timeframe,
+            "mode": mode,
+            "inserted": inserted,
+            "updated": updated,
+            "error": err,
+        }), status_code
+
+    # --- Branch: single live breakout confirm ---
+    if source == "breakout_live":
+        event_type = (payload.get("event") or "").strip().lower()
+        if event_type not in {"breakout_long", "breakout_short"}:
+            return jsonify({"success": False, "error": "event must be breakout_long or breakout_short."}), 400
+
+        symbol = (payload.get("symbol") or "").strip().upper()
+        timeframe = str(payload.get("timeframe") or payload.get("tf") or "").strip()
+        mode = (payload.get("mode") or "day").strip().lower()
+        if not symbol or not timeframe:
+            return jsonify({"success": False, "error": "symbol and timeframe are required."}), 400
+
+        bar_block = payload.get("bar") or {}
+        if not isinstance(bar_block, dict) or not bar_block:
+            bar_block = {
+                "time": payload.get("bar_time") or payload.get("time") or payload.get("timestamp"),
+                "open": payload.get("open"),
+                "high": payload.get("high"),
+                "low": payload.get("low"),
+                "close": payload.get("close"),
+                "volume": payload.get("volume"),
+            }
+
+        open_val = _tv_safe_float(bar_block.get("open"))
+        high_val = _tv_safe_float(bar_block.get("high"))
+        low_val = _tv_safe_float(bar_block.get("low"))
+        close_val = _tv_safe_float(bar_block.get("close"))
+        volume_val = _tv_safe_float(bar_block.get("volume")) or 0.0
+        if None in (open_val, high_val, low_val, close_val):
+            return jsonify({"success": False, "error": "Incomplete bar data for breakout_live."}), 400
+
+        epoch = _tv_epoch_seconds(bar_block.get("time") or payload.get("bar_time"))
+        if epoch is None:
+            return jsonify({"success": False, "error": "Invalid bar time for breakout_live."}), 400
+        bar_time_dt = datetime.fromtimestamp(epoch, tz=timezone.utc)
+
+        normalized_bar = {
+            "time": epoch,
+            "open": open_val,
+            "high": high_val,
+            "low": low_val,
+            "close": close_val,
+            "volume": volume_val,
+        }
+        save_bar_from_payload({
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "time": epoch,
+            "open": open_val,
+            "high": high_val,
+            "low": low_val,
+            "close": close_val,
+            "volume": volume_val,
+        })
+
+        breakout_ctx = payload.get("breakout") or payload.get("breakout_context") or {}
+        cache_key = f"{symbol}::{timeframe}"
+        BREAKOUT_EVENT_CACHE[cache_key] = {
+            "event": event_type,
+            "breakout_context": breakout_ctx,
+        }
+
+        event_row, err = persist_breakout_event_record(
+            payload,
+            event_type,
+            symbol,
+            timeframe,
+            mode,
+            bar_time_dt,
+            normalized_bar,
+            breakout_ctx,
+        )
+        auto_signal = _tv_coerce_bool(payload.get("auto_signal"), default=True)
+        analysis_mode = (payload.get("analysis_mode") or "technical").strip().lower()
+        if analysis_mode not in {"technical", "news_tech"}:
+            analysis_mode = "technical"
+        signal_payload = None
+        if auto_signal and err is None:
+            signal_row = run_ai_signal(symbol, timeframe, mode, analysis_mode, BREAKOUT_EVENT_CACHE.get(cache_key))
+            if signal_row is not None:
+                signal_payload = {
+                    "id": signal_row.id,
+                    "signal": signal_row.signal,
+                    "entry": signal_row.entry,
+                    "stop": signal_row.stop,
+                    "target": signal_row.target,
+                    "rr_ratio": signal_row.rr_ratio,
+                    "confidence": signal_row.confidence,
+                    "time_horizon": signal_row.time_horizon,
+                }
+                try:
+                    if NewSessionLocal is not None and event_row is not None:
+                        with NewSessionLocal() as session:
+                            db_event = session.query(BreakoutEvent).get(event_row.id)
+                            if db_event:
+                                db_event.signal_id = signal_row.id
+                                session.commit()
+                except Exception as exc:
+                    logging.error("Failed to link signal to breakout event: %s", exc)
+
+        status_code = 200 if err is None else 500
+        return jsonify({
+            "success": err is None,
+            "error": err,
+            "event_id": event_row.id if event_row else None,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "mode": mode,
+            "signal": signal_payload,
+        }), status_code
+
     symbol = (payload.get("symbol") or payload.get("ticker") or "").strip().upper()
     timeframe = str(payload.get("tf") or payload.get("timeframe") or "").strip()
     if not symbol or not timeframe:
@@ -3480,6 +3627,132 @@ def persist_tv_event(payload: Dict[str, Any]) -> None:
         logging.error("Failed to persist TradingView payload: %s", exc)
 
 
+def _parse_watchlist_date(value: Any) -> Optional[date]:
+    if not value:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def persist_breakout_watchlist_batch(
+    as_of_date: date,
+    timeframe: str,
+    mode: str,
+    alerts: List[Dict[str, Any]]
+) -> Tuple[int, int, Optional[str]]:
+    """Upsert breakout watchlist rows for a given date/timeframe."""
+    if NewSessionLocal is None:
+        return 0, 0, "Database is not configured."
+
+    inserted = 0
+    updated = 0
+    try:
+        with NewSessionLocal() as session:
+            for alert in alerts:
+                symbol = (alert.get("symbol") or "").strip().upper()
+                if not symbol:
+                    continue
+                direction = (alert.get("direction") or "watch").strip().lower()
+                existing = (
+                    session.query(BreakoutWatchlist)
+                    .filter(
+                        BreakoutWatchlist.as_of_date == as_of_date,
+                        BreakoutWatchlist.symbol == symbol,
+                        BreakoutWatchlist.timeframe == timeframe,
+                    )
+                    .one_or_none()
+                )
+                if existing is None:
+                    existing = BreakoutWatchlist(
+                        as_of_date=as_of_date,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                    )
+                    session.add(existing)
+                    inserted += 1
+                else:
+                    updated += 1
+
+                tags_val = alert.get("tags")
+                if isinstance(tags_val, list):
+                    tags_text = ",".join([str(t) for t in tags_val if t])
+                elif tags_val:
+                    tags_text = str(tags_val)
+                else:
+                    tags_text = None
+
+                existing.mode = mode
+                existing.direction = direction
+                existing.trigger_level = alert.get("trigger_level")
+                existing.stop_hint = alert.get("stop_hint")
+                existing.target_hint = alert.get("target_hint")
+                existing.structure = alert.get("structure")
+                existing.volume_vs_avg = alert.get("volume_vs_avg")
+                existing.notes = alert.get("notes")
+                existing.tags = tags_text
+                try:
+                    existing.raw_json = json.dumps(alert, ensure_ascii=False)
+                except Exception:
+                    existing.raw_json = str(alert)
+
+            session.commit()
+        return inserted, updated, None
+    except Exception as exc:
+        logging.error("Persist breakout watchlist failed: %s", exc)
+        return inserted, updated, str(exc)
+
+
+def persist_breakout_event_record(
+    payload: Dict[str, Any],
+    event_type: str,
+    symbol: str,
+    timeframe: str,
+    mode: str,
+    bar_time: datetime,
+    bar_block: Dict[str, Any],
+    breakout_ctx: Dict[str, Any],
+) -> Tuple[Optional[BreakoutEvent], Optional[str]]:
+    """Persist a single breakout event row."""
+    if NewSessionLocal is None:
+        return None, "Database is not configured."
+    try:
+        with NewSessionLocal() as session:
+            row = BreakoutEvent(
+                source=(payload.get("source") or "breakout_live"),
+                event=event_type,
+                symbol=symbol,
+                timeframe=timeframe,
+                mode=mode,
+                bar_time=bar_time,
+                open=bar_block["open"],
+                high=bar_block["high"],
+                low=bar_block["low"],
+                close=bar_block["close"],
+                volume=bar_block.get("volume") or 0.0,
+                break_level=breakout_ctx.get("break_level"),
+                trigger_price=breakout_ctx.get("trigger_price") or bar_block.get("close"),
+                lookback_bars=breakout_ctx.get("lookback_bars"),
+                structure=breakout_ctx.get("structure"),
+                atr_14=breakout_ctx.get("atr_14"),
+                atr_mult_stop=breakout_ctx.get("atr_mult_stop"),
+                relative_volume=breakout_ctx.get("relative_volume"),
+                session_label=breakout_ctx.get("session"),
+                confidence_hint=breakout_ctx.get("confidence_hint"),
+                notes=breakout_ctx.get("notes"),
+                raw_json=json.dumps(payload, ensure_ascii=False),
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            return row, None
+    except Exception as exc:
+        logging.error("Failed to persist breakout event: %s", exc)
+        return None, str(exc)
+
 def build_user_prompt(profile: str) -> str:
     if profile == "high_growth":
         return (
@@ -3752,6 +4025,25 @@ def signals_run():
     if not symbol or not timeframe or mode not in {"day", "swing"} or analysis_mode not in {"technical", "news_tech"}:
         return jsonify({"success": False, "error": "Invalid symbol/timeframe/mode/analysis_mode."}), 400
 
+    # Ensure bars exist by backfilling from the in-memory relay if needed.
+    existing_bars = get_recent_bars(symbol, timeframe, limit=TRADINGVIEW_MAX_BARS)
+    if not existing_bars:
+        relay_bars = tradingview_relay.get_bars(symbol, timeframe, limit=TRADINGVIEW_MAX_BARS)
+        if relay_bars:
+            persist_bars_to_db([
+                {
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "time": bar.get("time"),
+                    "open": bar.get("open"),
+                    "high": bar.get("high"),
+                    "low": bar.get("low"),
+                    "close": bar.get("close"),
+                    "volume": bar.get("volume"),
+                }
+                for bar in relay_bars
+            ])
+
     cache_key = f"{symbol}::{timeframe}"
     breakout_event = BREAKOUT_EVENT_CACHE.get(cache_key)
     signal_row = run_ai_signal(symbol, timeframe, mode, analysis_mode, breakout_event)
@@ -3895,6 +4187,224 @@ def technical_latest():
             return jsonify({"success": True, "data": data})
     except Exception:
         return jsonify({"success": False, "error": "Failed to fetch latest technical payload."}), 500
+
+
+@app.route("/api/breakouts/watchlist", methods=["GET"])
+@auth.login_required
+def breakout_watchlist_api():
+    """Return breakout watchlist rows for a given date (defaults to latest date)."""
+    if NewSessionLocal is None:
+        return jsonify({"success": False, "error": "Database is not configured."}), 500
+
+    date_param = (request.args.get("date") or "").strip()
+    symbol_filter = (request.args.get("symbol") or "").strip().upper()
+    timeframe_filter = (request.args.get("timeframe") or "").strip()
+
+    target_date = None
+    if date_param:
+        target_date = _parse_watchlist_date(date_param)
+        if target_date is None:
+            return jsonify({"success": False, "error": "Invalid date format. Use YYYY-MM-DD."}), 400
+
+    try:
+        with NewSessionLocal() as session:
+            if target_date is None:
+                latest = (
+                    session.query(BreakoutWatchlist.as_of_date)
+                    .order_by(BreakoutWatchlist.as_of_date.desc())
+                    .first()
+                )
+                if not latest:
+                    return jsonify({"success": True, "data": [], "as_of_date": None})
+                target_date = latest[0]
+
+            query = session.query(BreakoutWatchlist).filter(BreakoutWatchlist.as_of_date == target_date)
+            if symbol_filter:
+                query = query.filter(BreakoutWatchlist.symbol == symbol_filter)
+            if timeframe_filter:
+                query = query.filter(BreakoutWatchlist.timeframe == timeframe_filter)
+
+            rows = query.order_by(BreakoutWatchlist.symbol.asc()).all()
+            data = [
+                {
+                    "id": row.id,
+                    "as_of_date": row.as_of_date.isoformat() if row.as_of_date else None,
+                    "symbol": row.symbol,
+                    "timeframe": row.timeframe,
+                    "mode": row.mode,
+                    "direction": row.direction,
+                    "trigger_level": row.trigger_level,
+                    "stop_hint": row.stop_hint,
+                    "target_hint": row.target_hint,
+                    "structure": row.structure,
+                    "volume_vs_avg": row.volume_vs_avg,
+                    "notes": row.notes,
+                    "tags": row.tags,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                }
+                for row in rows
+            ]
+            return jsonify({"success": True, "data": data, "as_of_date": target_date.isoformat()})
+    except Exception:
+        return jsonify({"success": False, "error": "Failed to fetch breakout watchlist."}), 500
+
+
+@app.route("/api/breakouts/events", methods=["GET"])
+@auth.login_required
+def breakout_events_api():
+    """Return recent breakout events with optional filters."""
+    if NewSessionLocal is None:
+        return jsonify({"success": False, "error": "Database is not configured."}), 500
+
+    symbol_filter = (request.args.get("symbol") or "").strip().upper()
+    timeframe_filter = (request.args.get("timeframe") or "").strip()
+    event_filter = (request.args.get("event") or "").strip().lower()
+    try:
+        limit = int(request.args.get("limit") or 50)
+    except ValueError:
+        limit = 50
+    limit = max(1, min(limit, 200))
+
+    try:
+        with NewSessionLocal() as session:
+            query = session.query(BreakoutEvent).options(joinedload(BreakoutEvent.signal))
+            if symbol_filter:
+                query = query.filter(BreakoutEvent.symbol == symbol_filter)
+            if timeframe_filter:
+                query = query.filter(BreakoutEvent.timeframe == timeframe_filter)
+            if event_filter:
+                query = query.filter(BreakoutEvent.event == event_filter)
+
+            rows = (
+                query.order_by(BreakoutEvent.bar_time.desc())
+                .limit(limit)
+                .all()
+            )
+            data = []
+            for row in rows:
+                signal_block = None
+                if row.signal:
+                    signal_block = {
+                        "id": row.signal.id,
+                        "analysis_mode": row.signal.analysis_mode,
+                        "signal": row.signal.signal,
+                        "entry": row.signal.entry,
+                        "stop": row.signal.stop,
+                        "target": row.signal.target,
+                        "rr_ratio": row.signal.rr_ratio,
+                        "confidence": row.signal.confidence,
+                        "time_horizon": row.signal.time_horizon,
+                        "created_at": row.signal.created_at.isoformat() if row.signal.created_at else None,
+                    }
+                data.append({
+                    "id": row.id,
+                    "source": row.source,
+                    "event": row.event,
+                    "symbol": row.symbol,
+                    "timeframe": row.timeframe,
+                    "mode": row.mode,
+                    "bar_time": row.bar_time.isoformat() if row.bar_time else None,
+                    "open": row.open,
+                    "high": row.high,
+                    "low": row.low,
+                    "close": row.close,
+                    "volume": row.volume,
+                    "break_level": row.break_level,
+                    "trigger_price": row.trigger_price,
+                    "lookback_bars": row.lookback_bars,
+                    "structure": row.structure,
+                    "atr_14": row.atr_14,
+                    "atr_mult_stop": row.atr_mult_stop,
+                    "relative_volume": row.relative_volume,
+                    "session_label": row.session_label,
+                    "confidence_hint": row.confidence_hint,
+                    "notes": row.notes,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "signal": signal_block,
+                })
+
+            return jsonify({"success": True, "data": data})
+    except Exception:
+        return jsonify({"success": False, "error": "Failed to fetch breakout events."}), 500
+
+
+@app.route("/api/breakouts/live", methods=["GET"])
+@auth.login_required
+def breakout_events_live_api():
+    """
+    Return breakout events in a recent window for the live card.
+    window: "1d" (default) or "3d" (calendar days back)
+    limit: up to 200 (default 50)
+    """
+    if NewSessionLocal is None:
+        return jsonify({"success": False, "error": "Database is not configured."}), 500
+
+    window_param = (request.args.get("window") or "1d").strip().lower()
+    days_lookup = {"1d": 1, "1": 1, "3d": 3, "3": 3}
+    days_back = days_lookup.get(window_param, 1)
+    try:
+        limit = int(request.args.get("limit") or 50)
+    except ValueError:
+        limit = 50
+    limit = max(1, min(limit, 200))
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
+
+    try:
+        with NewSessionLocal() as session:
+            rows = (
+                session.query(BreakoutEvent)
+                .options(joinedload(BreakoutEvent.signal))
+                .filter(BreakoutEvent.bar_time >= cutoff)
+                .order_by(BreakoutEvent.bar_time.desc())
+                .limit(limit)
+                .all()
+            )
+            data = []
+            for row in rows:
+                signal_block = None
+                if row.signal:
+                    signal_block = {
+                        "id": row.signal.id,
+                        "analysis_mode": row.signal.analysis_mode,
+                        "signal": row.signal.signal,
+                        "entry": row.signal.entry,
+                        "stop": row.signal.stop,
+                        "target": row.signal.target,
+                        "rr_ratio": row.signal.rr_ratio,
+                        "confidence": row.signal.confidence,
+                        "time_horizon": row.signal.time_horizon,
+                        "created_at": row.signal.created_at.isoformat() if row.signal.created_at else None,
+                    }
+                data.append({
+                    "id": row.id,
+                    "source": row.source,
+                    "event": row.event,
+                    "symbol": row.symbol,
+                    "timeframe": row.timeframe,
+                    "mode": row.mode,
+                    "bar_time": row.bar_time.isoformat() if row.bar_time else None,
+                    "open": row.open,
+                    "high": row.high,
+                    "low": row.low,
+                    "close": row.close,
+                    "volume": row.volume,
+                    "break_level": row.break_level,
+                    "trigger_price": row.trigger_price,
+                    "lookback_bars": row.lookback_bars,
+                    "structure": row.structure,
+                    "atr_14": row.atr_14,
+                    "atr_mult_stop": row.atr_mult_stop,
+                    "relative_volume": row.relative_volume,
+                    "session_label": row.session_label,
+                    "confidence_hint": row.confidence_hint,
+                    "notes": row.notes,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "signal": signal_block,
+                })
+            return jsonify({"success": True, "data": data, "window_days": days_back})
+    except Exception:
+        return jsonify({"success": False, "error": "Failed to fetch live breakout events."}), 500
 
 
 @app.errorhandler(HTTPException)
