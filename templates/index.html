@@ -551,12 +551,6 @@
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="breakout-history-tab" data-bs-toggle="tab" data-bs-target="#breakout-history-pane"
-                    type="button" role="tab">
-                Breakout History
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
             <button class="nav-link" id="tv-tab" data-bs-toggle="tab" data-bs-target="#tv-pane"
                     type="button" role="tab">
                 TradingView Signals
@@ -1115,147 +1109,199 @@
 
         <!-- ===================== HISTORY TAB ===================== -->
         <div class="tab-pane fade" id="history-pane" role="tabpanel" aria-labelledby="history-tab">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5 class="mb-0">Alert Performance History</h5>
-                        <small class="text-muted">
-                            Aggregated from all past scans, ranked by performance from last entry. Includes the AI’s
-                            original target & potential gain so you can audit each setup later.
-                        </small>
-                    </div>
-                </div>
-                <div class="card-body p-0">
-                    <div class="history-controls p-3">
-                        <div class="input-group input-group-sm flex-grow-1 flex-lg-grow-0">
-                            <span class="input-group-text">Search</span>
-                            <input type="search" class="form-control" id="historySearch"
-                                   placeholder="Ticker, profile, tier...">
+            <ul class="nav nav-pills mb-3" id="historySubTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="history-scanner-tab" data-bs-toggle="tab" data-bs-target="#history-scanner" type="button" role="tab">Scanner History</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="history-breakout-tab" data-bs-toggle="tab" data-bs-target="#history-breakout" type="button" role="tab">Breakout History</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="history-ai-tab" data-bs-toggle="tab" data-bs-target="#history-ai" type="button" role="tab">AI Signal History</button>
+                </li>
+            </ul>
+            <div class="tab-content">
+                <div class="tab-pane fade show active" id="history-scanner" role="tabpanel" aria-labelledby="history-scanner-tab">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-0">Alert Performance History</h5>
+                                <small class="text-muted">
+                                    Aggregated from all past scans, ranked by performance from last entry. Includes the AI’s
+                                    original target & potential gain so you can audit each setup later.
+                                </small>
+                            </div>
                         </div>
-                        <select class="form-select form-select-sm w-auto" id="historyProfileFilter">
-                            <option value="">Profile: All</option>
-                            <option value="hedge_fund">Hedge Fund PM</option>
-                            <option value="pro_trader">Pro Momentum</option>
-                            <option value="catalyst">News / SEC</option>
-                        </select>
-                        <select class="form-select form-select-sm w-auto" id="historyTierFilter">
-                            <option value="">Tier: All</option>
-                            <option value="SmallCap">SmallCap / High Beta</option>
-                            <option value="MidCap">MidCap / Balanced</option>
-                            <option value="LargeCap">LargeCap / Institutional</option>
-                        </select>
-                        <button class="btn btn-sm btn-outline-light ms-auto" id="historyResetFilters">
-                            Reset
-                        </button>
-                        <div class="form-check form-switch ms-3 text-nowrap">
-                            <input class="form-check-input" type="checkbox" id="historyLiveQuotes">
-                            <label class="form-check-label small" for="historyLiveQuotes">
-                                Live quotes
-                            </label>
+                        <div class="card-body p-0">
+                            <div class="history-controls p-3">
+                                <div class="input-group input-group-sm flex-grow-1 flex-lg-grow-0">
+                                    <span class="input-group-text">Search</span>
+                                    <input type="search" class="form-control" id="historySearch"
+                                           placeholder="Ticker, profile, tier...">
+                                </div>
+                                <select class="form-select form-select-sm w-auto" id="historyProfileFilter">
+                                    <option value="">Profile: All</option>
+                                    <option value="hedge_fund">Hedge Fund PM</option>
+                                    <option value="pro_trader">Pro Momentum</option>
+                                    <option value="catalyst">News / SEC</option>
+                                </select>
+                                <select class="form-select form-select-sm w-auto" id="historyTierFilter">
+                                    <option value="">Tier: All</option>
+                                    <option value="SmallCap">SmallCap / High Beta</option>
+                                    <option value="MidCap">MidCap / Balanced</option>
+                                    <option value="LargeCap">LargeCap / Institutional</option>
+                                </select>
+                                <button class="btn btn-sm btn-outline-light ms-auto" id="historyResetFilters">
+                                    Reset
+                                </button>
+                                <div class="form-check form-switch ms-3 text-nowrap">
+                                    <input class="form-check-input" type="checkbox" id="historyLiveQuotes">
+                                    <label class="form-check-label small" for="historyLiveQuotes">
+                                        Live quotes
+                                    </label>
+                                </div>
+                                <small class="text-muted history-results-count" id="historyResultsCount">
+                                    Showing 0 / 0
+                                </small>
+                            </div>
+                            <div class="table-responsive history-table-wrapper" id="historyTableWrapper">
+                                <table class="table table-dark table-striped table-hover mb-0 table-sortable history-table">
+                                    <thead>
+                                    <tr>
+                                        <th class="history-sortable" data-history-sort="ticker">
+                                            Ticker <span class="sort-indicator"></span>
+                                        </th>
+                                        <th class="history-sortable" data-history-sort="alerts">
+                                            Alerts <span class="sort-indicator"></span>
+                                        </th>
+                                        <th class="history-sortable" data-history-sort="last_profile">
+                                            Last Profile <span class="sort-indicator"></span>
+                                        </th>
+                                        <th class="history-sortable" data-history-sort="last_tier">
+                                            Last Tier <span class="sort-indicator"></span>
+                                        </th>
+                                        <th class="history-sortable" data-history-sort="last_entry">
+                                            Last Entry <span class="sort-indicator"></span>
+                                        </th>
+                                        <th class="history-sortable" data-history-sort="last_ai_target_price">
+                                            AI Target <span class="sort-indicator"></span>
+                                        </th>
+                                        <th class="history-sortable" data-history-sort="last_ai_potential_gain_pct">
+                                            AI Gain % <span class="sort-indicator"></span>
+                                        </th>
+                                        <th class="history-sortable" data-history-sort="current_price">
+                                            Current <span class="sort-indicator"></span>
+                                        </th>
+                                        <th class="history-sortable" data-history-sort="current_change_pct">
+                                            % from Entry <span class="sort-indicator"></span>
+                                        </th>
+                                        <th class="history-sortable" data-history-sort="first_date">
+                                            First Seen <span class="sort-indicator"></span>
+                                        </th>
+                                        <th class="history-sortable" data-history-sort="last_date">
+                                            Last Seen <span class="sort-indicator"></span>
+                                        </th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="history-table-body">
+                                    <tr>
+                                        <td colspan="11" class="text-center text-muted py-3">
+                                            History will appear here after you run scans.
+                                        </td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div id="historyScrollSentinel" class="history-scroll-sentinel text-center text-muted small py-2">
+                                Scroll to load more history
+                            </div>
                         </div>
-                        <small class="text-muted history-results-count" id="historyResultsCount">
-                            Showing 0 / 0
-                        </small>
                     </div>
-                    <div class="table-responsive history-table-wrapper" id="historyTableWrapper">
-                        <table class="table table-dark table-striped table-hover mb-0 table-sortable history-table">
-                            <thead>
-                            <tr>
-                                <th class="history-sortable" data-history-sort="ticker">
-                                    Ticker <span class="sort-indicator"></span>
-                                </th>
-                                <th class="history-sortable" data-history-sort="alerts">
-                                    Alerts <span class="sort-indicator"></span>
-                                </th>
-                                <th class="history-sortable" data-history-sort="last_profile">
-                                    Last Profile <span class="sort-indicator"></span>
-                                </th>
-                                <th class="history-sortable" data-history-sort="last_tier">
-                                    Last Tier <span class="sort-indicator"></span>
-                                </th>
-                                <th class="history-sortable" data-history-sort="last_entry">
-                                    Last Entry <span class="sort-indicator"></span>
-                                </th>
-                                <th class="history-sortable" data-history-sort="last_ai_target_price">
-                                    AI Target <span class="sort-indicator"></span>
-                                </th>
-                                <th class="history-sortable" data-history-sort="last_ai_potential_gain_pct">
-                                    AI Gain % <span class="sort-indicator"></span>
-                                </th>
-                                <th class="history-sortable" data-history-sort="current_price">
-                                    Current <span class="sort-indicator"></span>
-                                </th>
-                                <th class="history-sortable" data-history-sort="current_change_pct">
-                                    % from Entry <span class="sort-indicator"></span>
-                                </th>
-                                <th class="history-sortable" data-history-sort="first_date">
-                                    First Seen <span class="sort-indicator"></span>
-                                </th>
-                                <th class="history-sortable" data-history-sort="last_date">
-                                    Last Seen <span class="sort-indicator"></span>
-                                </th>
-                            </tr>
-                            </thead>
-                            <tbody id="history-table-body">
-                            <tr>
-                                <td colspan="11" class="text-center text-muted py-3">
-                                    History will appear here after you run scans.
-                                </td>
-                            </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div id="historyScrollSentinel" class="history-scroll-sentinel text-center text-muted small py-2">
-                        Scroll to load more history
-                    </div>
-                </div>
-            </div>
 
-            <div class="card mt-3" id="history-analysis-card">
-                <div class="card-body" id="history-analysis-body">
-                    <p class="text-muted mb-0">Select any ticker in the history table to load a full AI breakdown.</p>
+                    <div class="card mt-3" id="history-analysis-card">
+                        <div class="card-body" id="history-analysis-body">
+                            <p class="text-muted mb-0">Select any ticker in the history table to load a full AI breakdown.</p>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
 
-        <!-- ===================== BREAKOUT HISTORY TAB ===================== -->
-        <div class="tab-pane fade" id="breakout-history-pane" role="tabpanel" aria-labelledby="breakout-history-tab">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5 class="mb-0">Breakout History</h5>
-                        <small class="text-muted">Live breakout events from TradingView, including AI verdicts when available.</small>
-                    </div>
-                    <div class="d-flex align-items-center gap-2">
-                        <small class="text-muted" id="breakoutStatus">Idle</small>
-                        <button class="btn btn-sm btn-outline-light" id="breakoutRefreshBtn">Refresh</button>
+                <div class="tab-pane fade" id="history-breakout" role="tabpanel" aria-labelledby="history-breakout-tab">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-0">Breakout History</h5>
+                                <small class="text-muted">Live breakout events from TradingView, including AI verdicts when available.</small>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <small class="text-muted" id="breakoutStatus">Idle</small>
+                                <button class="btn btn-sm btn-outline-light" id="breakoutRefreshBtn">Refresh</button>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-dark table-striped table-hover mb-0 align-middle">
+                                    <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Symbol</th>
+                                        <th>TF</th>
+                                        <th>Event</th>
+                                        <th>Trigger</th>
+                                        <th>Close</th>
+                                        <th>RVOL</th>
+                                        <th>Structure</th>
+                                        <th>Signal</th>
+                                        <th>Entry</th>
+                                        <th>Stop</th>
+                                        <th>Target</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="breakoutEventsBody">
+                                    <tr>
+                                        <td colspan="12" class="text-center text-muted py-3">No breakout events yet.</td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-dark table-striped table-hover mb-0 align-middle">
-                            <thead>
-                            <tr>
-                                <th>Time</th>
-                                <th>Symbol</th>
-                                <th>TF</th>
-                                <th>Event</th>
-                                <th>Trigger</th>
-                                <th>Close</th>
-                                <th>RVOL</th>
-                                <th>Structure</th>
-                                <th>Signal</th>
-                                <th>Entry</th>
-                                <th>Stop</th>
-                                <th>Target</th>
-                            </tr>
-                            </thead>
-                            <tbody id="breakoutEventsBody">
-                            <tr>
-                                <td colspan="12" class="text-center text-muted py-3">No breakout events yet.</td>
-                            </tr>
-                            </tbody>
-                        </table>
+
+                <div class="tab-pane fade" id="history-ai" role="tabpanel" aria-labelledby="history-ai-tab">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-0">AI Signal History</h5>
+                                <small class="text-muted">Latest AI signals across symbols.</small>
+                            </div>
+                            <button class="btn btn-sm btn-outline-light" id="aiHistoryRefreshBtn">Refresh</button>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-dark table-striped table-hover mb-0 align-middle">
+                                    <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Symbol</th>
+                                        <th>TF</th>
+                                        <th>Mode</th>
+                                        <th>Analysis</th>
+                                        <th>Signal</th>
+                                        <th>Entry</th>
+                                        <th>Stop</th>
+                                        <th>Target</th>
+                                        <th>RR</th>
+                                        <th>Conf%</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="aiHistoryBody">
+                                    <tr>
+                                        <td colspan="11" class="text-center text-muted py-3">No signals yet.</td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -3875,8 +3921,65 @@
         fetchLiveBreakouts();
     }
 
+    // ------------- AI Signal history -------------
+    const aiHistoryBody = document.getElementById('aiHistoryBody');
+    const aiHistoryRefreshBtn = document.getElementById('aiHistoryRefreshBtn');
+
+    function renderAiHistory(rows) {
+        if (!aiHistoryBody) return;
+        aiHistoryBody.innerHTML = '';
+        if (!Array.isArray(rows) || !rows.length) {
+            aiHistoryBody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-3">No signals yet.</td></tr>';
+            return;
+        }
+        rows.forEach(sig => {
+            const tr = document.createElement('tr');
+            const cells = [
+                formatEST(sig.created_at),
+                sig.symbol || '',
+                sig.timeframe || '',
+                sig.mode || '',
+                sig.analysis_mode || '',
+                sig.signal || '',
+                sig.entry != null ? Number(sig.entry).toFixed(2) : '-',
+                sig.stop != null ? Number(sig.stop).toFixed(2) : '-',
+                sig.target != null ? Number(sig.target).toFixed(2) : '-',
+                sig.rr_ratio != null ? Number(sig.rr_ratio).toFixed(2) : '-',
+                sig.confidence != null ? `${sig.confidence}%` : '-',
+            ];
+            cells.forEach(text => {
+                const td = document.createElement('td');
+                td.textContent = text;
+                tr.appendChild(td);
+            });
+            aiHistoryBody.appendChild(tr);
+        });
+    }
+
+    async function fetchAiHistory() {
+        if (!aiHistoryBody) return;
+        aiHistoryBody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-3">Loading…</td></tr>';
+        try {
+            const resp = await fetch('/signals/recent?limit=100');
+            if (!resp.ok) {
+                aiHistoryBody.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-3">Failed to load.</td></tr>';
+                return;
+            }
+            const rows = await resp.json();
+            renderAiHistory(rows);
+        } catch (err) {
+            console.error('ai history error', err);
+            aiHistoryBody.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-3">Error loading.</td></tr>';
+        }
+    }
+
+    aiHistoryRefreshBtn?.addEventListener('click', () => fetchAiHistory());
+
     // ------------- History tab logic -------------
     const historyTab = document.getElementById('history-tab');
+    const historySubtabScanner = document.getElementById('history-scanner-tab');
+    const historySubtabBreakout = document.getElementById('history-breakout-tab');
+    const historySubtabAI = document.getElementById('history-ai-tab');
     const historySearchInput = document.getElementById('historySearch');
     const historyProfileFilter = document.getElementById('historyProfileFilter');
     const historyTierFilter = document.getElementById('historyTierFilter');
@@ -4621,6 +4724,13 @@
     if (historyTab?.classList.contains('active')) {
         fetchHistorySummary();
     }
+
+    historySubtabBreakout?.addEventListener('shown.bs.tab', () => {
+        fetchBreakoutEvents();
+    });
+    historySubtabAI?.addEventListener('shown.bs.tab', () => {
+        fetchAiHistory();
+    });
 
     // ------------- Breakout history tab -------------
     const breakoutHistoryTab = document.getElementById('breakout-history-tab');
