@@ -1,5 +1,6 @@
-from typing import Dict, Any, Optional
 import json
+import logging
+from typing import Dict, Any, Optional
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -21,15 +22,25 @@ def run_ai_signal(
     if not bars:
         return None
 
+    raw = ""
+    context: Dict[str, Any] = {}
+    parsed: Dict[str, Any] = {
+        "signal": "hold",
+        "entry": None,
+        "stop": None,
+        "target": None,
+        "rr_ratio": None,
+        "confidence": 0,
+        "time_horizon": "unknown",
+        "reason_short": "Fallback: AI unavailable.",
+    }
     try:
         context = build_technical_context(symbol, timeframe, mode, bars, breakout_event, analysis_mode)
         raw = call_perplexity(context, mode, analysis_mode)
         parsed = parse_ai_response(raw)
     except Exception as exc:
-        # Log and bail gracefully instead of raising to the API layer
-        import logging
         logging.error("AI signal generation failed for %s %s: %s", symbol, timeframe, exc)
-        return None
+        parsed["reason_short"] = f"Fallback: AI error {type(exc).__name__}"
 
     if SessionLocal is None:
         return None
@@ -47,8 +58,8 @@ def run_ai_signal(
         confidence=parsed.get("confidence"),
         time_horizon=parsed.get("time_horizon"),
         reason_short=parsed.get("reason_short"),
-        raw_json=str(parsed),
-        context_json=json.dumps(context, ensure_ascii=False),
+        raw_json=str(raw or parsed),
+        context_json=json.dumps(context or {}, ensure_ascii=False),
     )
     try:
         with SessionLocal() as session:
@@ -56,5 +67,6 @@ def run_ai_signal(
             session.commit()
             session.refresh(signal_row)
             return signal_row
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
+        logging.error("Failed to persist signal for %s %s: %s", symbol, timeframe, exc)
         return None

@@ -26,6 +26,7 @@ def _coerce_time(raw_time: Any) -> Optional[datetime]:
 
 def save_bar_from_payload(payload: Dict[str, Any]) -> Optional[Bar]:
     if SessionLocal is None:
+        # Database not configured
         return None
     symbol = (payload.get("symbol") or "").strip().upper()
     timeframe = str(payload.get("timeframe") or payload.get("tf") or "").strip()
@@ -66,7 +67,9 @@ def save_bar_from_payload(payload: Dict[str, Any]) -> Optional[Bar]:
             session.commit()
             session.refresh(bar)
             return bar
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
+        import logging
+        logging.error("Failed to persist bar %s %s at %s: %s", symbol, timeframe, dt, exc)
         return None
 
 
@@ -83,5 +86,7 @@ def get_recent_bars(symbol: str, timeframe: str, limit: int = 300) -> List[Bar]:
                 .all()
             )
             return list(reversed(rows))
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
+        import logging
+        logging.error("Failed to fetch recent bars for %s %s: %s", symbol, timeframe, exc)
         return []
