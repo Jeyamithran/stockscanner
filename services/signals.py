@@ -21,9 +21,15 @@ def run_ai_signal(
     if not bars:
         return None
 
-    context = build_technical_context(symbol, timeframe, mode, bars, breakout_event, analysis_mode)
-    raw = call_perplexity(context, mode, analysis_mode)
-    parsed = parse_ai_response(raw)
+    try:
+        context = build_technical_context(symbol, timeframe, mode, bars, breakout_event, analysis_mode)
+        raw = call_perplexity(context, mode, analysis_mode)
+        parsed = parse_ai_response(raw)
+    except Exception as exc:
+        # Log and bail gracefully instead of raising to the API layer
+        import logging
+        logging.error("AI signal generation failed for %s %s: %s", symbol, timeframe, exc)
+        return None
 
     if SessionLocal is None:
         return None
