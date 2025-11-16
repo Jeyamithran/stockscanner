@@ -4044,6 +4044,9 @@ def signals_run():
                 }
                 for bar in relay_bars
             ])
+            existing_bars = get_recent_bars(symbol, timeframe, limit=TRADINGVIEW_MAX_BARS)
+    if not existing_bars:
+        return jsonify({"success": False, "error": "Missing bars for this symbol/timeframe."}), 400
 
     cache_key = f"{symbol}::{timeframe}"
     breakout_event = BREAKOUT_EVENT_CACHE.get(cache_key)
