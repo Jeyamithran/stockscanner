@@ -29,7 +29,11 @@ def save_bar_from_payload(payload: Dict[str, Any]) -> Optional[Bar]:
         # Database not configured
         return None
     symbol = (payload.get("symbol") or "").strip().upper()
-    timeframe = str(payload.get("timeframe") or payload.get("tf") or "").strip()
+    timeframe_raw = str(payload.get("timeframe") or payload.get("tf") or "").strip()
+    timeframe = timeframe_raw.lower()
+    if timeframe.endswith("m"):
+        timeframe = timeframe[:-1]
+    timeframe = timeframe.upper() if timeframe.isalpha() else timeframe
     ts = payload.get("time") or payload.get("timestamp") or payload.get("bar_time")
 
     ohlc = payload.get("ohlc") or payload
@@ -76,11 +80,17 @@ def save_bar_from_payload(payload: Dict[str, Any]) -> Optional[Bar]:
 def get_recent_bars(symbol: str, timeframe: str, limit: int = 300) -> List[Bar]:
     if SessionLocal is None:
         return []
+    # normalize timeframe similar to save_bar_from_payload
+    tf = (timeframe or "").strip()
+    tf_norm = tf.lower()
+    if tf_norm.endswith("m"):
+        tf_norm = tf_norm[:-1]
+    tf_norm = tf_norm.upper() if tf_norm.isalpha() else tf_norm
     try:
         with SessionLocal() as session:
             rows = (
                 session.query(Bar)
-                .filter(Bar.symbol == symbol.upper(), Bar.timeframe == timeframe)
+                .filter(Bar.symbol == symbol.upper(), Bar.timeframe == tf_norm)
                 .order_by(Bar.time.desc())
                 .limit(limit)
                 .all()

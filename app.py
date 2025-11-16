@@ -4027,7 +4027,11 @@ def tv_webhook():
 def signals_run():
     payload = request.get_json(silent=True) or {}
     symbol = (payload.get("symbol") or "").strip().upper()
-    timeframe = str(payload.get("timeframe") or "").strip()
+    timeframe_input = str(payload.get("timeframe") or "").strip()
+    timeframe_norm = timeframe_input.lower()
+    if timeframe_norm.endswith("m"):
+        timeframe_norm = timeframe_norm[:-1]
+    timeframe = timeframe_norm
     mode = (payload.get("mode") or "day").strip().lower()
     analysis_mode = (payload.get("analysis_mode") or "technical").strip().lower()
     if not symbol or not timeframe or mode not in {"day", "swing"} or analysis_mode not in {"technical", "news_tech"}:
