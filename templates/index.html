@@ -4791,7 +4791,7 @@
             }
             const ctx = data.payload || {};
             const summary = `
-                <div class="small text-muted mb-2">Received: ${data.received_at || '-'} | Bar: ${data.bar_time || '-'}</div>
+                <div class="small text-muted mb-2">Received: ${formatEST(data.received_at) || '-'} | Bar: ${formatEST(data.bar_time) || '-'}</div>
                 <div><strong>${data.symbol || ''} • ${data.timeframe || ''}</strong></div>
                 <div class="small mt-2">
                     <div>Trend: ${ctx.trend ? JSON.stringify(ctx.trend) : '-'}</div>

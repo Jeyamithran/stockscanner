@@ -7,6 +7,7 @@ import sqlite3
 import time
 import math
 import copy
+import zoneinfo
 from collections import deque
 from contextlib import contextmanager
 from threading import Lock
@@ -114,6 +115,7 @@ PPLX_MODEL_ALIASES = {
     "pro": "sonar-pro",
     "classic": "sonar-pro"
 }
+TZ_EST = zoneinfo.ZoneInfo("America/New_York")
 
 # --- External API keys ---
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
