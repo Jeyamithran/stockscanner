@@ -1325,6 +1325,18 @@
                             </p>
                         </div>
                     </div>
+                    <div class="card mb-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-0">Chart</h6>
+                                <small class="text-muted">Candles + volume with AI overlays.</small>
+                            </div>
+                            <button class="btn btn-sm btn-outline-light" id="tvRefreshChartBtn">Refresh</button>
+                        </div>
+                        <div class="card-body" style="height: 360px;">
+                            <div id="tvChartContainer" style="width: 100%; height: 100%;"></div>
+                        </div>
+                    </div>
                     <div class="card">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <div>
@@ -1526,6 +1538,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.27.0/plotly.min.js"></script>
 <script>
     // ------------- Theme handling -------------
     const themeSwitch = document.getElementById('themeSwitch');
@@ -3184,6 +3197,8 @@
     const tvDetailRefreshBtn = document.getElementById('tvDetailRefreshBtn');
     const tvStreamsBody = document.getElementById('tvStreamsBody');
     const tvSignalCard = document.getElementById('tvSignalCard');
+    const tvChartContainer = document.getElementById('tvChartContainer');
+    const tvRefreshChartBtn = document.getElementById('tvRefreshChartBtn');
     const tvStreamsStatus = document.getElementById('tvStreamsStatus');
 
     let tvStreams = [];
@@ -3687,7 +3702,88 @@
                 ${contextMetaLabel ? `<p class="small text-muted mt-3 mb-0">${contextMetaLabel}</p>` : ''}
             </div>
         `;
+
+        // Update chart with bars if available
+        if (bars.length && tvChartContainer) {
+            renderTvChart(bars, signal);
+        }
     }
+
+    // Lightweight chart via Plotly (if available)
+    async function renderTvChart(bars, signal) {
+        if (typeof Plotly === 'undefined') {
+            tvChartContainer.innerHTML = '<p class="text-muted small mb-0">Plotly not loaded.</p>';
+            return;
+        }
+        const times = bars.map(b => new Date(b.time_iso || b.time * 1000));
+        const opens = bars.map(b => b.open);
+        const highs = bars.map(b => b.high);
+        const lows = bars.map(b => b.low);
+        const closes = bars.map(b => b.close);
+        const volumes = bars.map(b => b.volume || 0);
+
+        const candleTrace = {
+            x: times,
+            open: opens,
+            high: highs,
+            low: lows,
+            close: closes,
+            type: 'candlestick',
+            name: 'Price',
+            increasing: { line: { color: '#16a34a' } },
+            decreasing: { line: { color: '#dc3545' } },
+        };
+        const volumeTrace = {
+            x: times,
+            y: volumes,
+            type: 'bar',
+            yaxis: 'y2',
+            marker: { color: 'rgba(128,128,128,0.4)' },
+            name: 'Volume'
+        };
+        const shapes = [];
+        if (signal.entry != null) {
+            shapes.push({
+                type: 'line', x0: times[0], x1: times[times.length - 1], y0: signal.entry, y1: signal.entry,
+                line: { color: '#0d6efd', dash: 'dot' }, yref: 'y', xref: 'x'
+            });
+        }
+        if (signal.stop != null) {
+            shapes.push({
+                type: 'line', x0: times[0], x1: times[times.length - 1], y0: signal.stop, y1: signal.stop,
+                line: { color: '#dc3545', dash: 'dot' }, yref: 'y', xref: 'x'
+            });
+        }
+        if (signal.target != null) {
+            shapes.push({
+                type: 'line', x0: times[0], x1: times[times.length - 1], y0: signal.target, y1: signal.target,
+                line: { color: '#198754', dash: 'dot' }, yref: 'y', xref: 'x'
+            });
+        }
+
+        const layout = {
+            margin: { l: 40, r: 40, t: 10, b: 30 },
+            xaxis: { rangeslider: { visible: false } },
+            yaxis: { title: 'Price' },
+            yaxis2: {
+                title: 'Volume',
+                overlaying: 'y',
+                side: 'right',
+                showgrid: false,
+                rangemode: 'tozero'
+            },
+            shapes,
+            showlegend: false,
+            paper_bgcolor: '#0b0f19',
+            plot_bgcolor: '#0b0f19',
+            font: { color: '#d1d5db' }
+        };
+        Plotly.newPlot(tvChartContainer, [candleTrace, volumeTrace], layout, { responsive: true });
+    }
+
+    tvRefreshChartBtn?.addEventListener('click', () => {
+        if (tvActiveStream) fetchTradingviewSignalDetail(false);
+    });
 
     tvRefreshBtn?.addEventListener('click', fetchTradingviewStreams);
     tvDetailRefreshBtn?.addEventListener('click', () => fetchTradingviewSignalDetail(false));
