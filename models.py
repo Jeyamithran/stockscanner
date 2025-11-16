@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text, UniqueConstraint, Index
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, UniqueConstraint, Index, BigInteger
 
 from database import Base
 
@@ -47,6 +47,7 @@ class Signal(Base):
     time_horizon = Column(String(32))
     reason_short = Column(Text)
     raw_json = Column(Text)
+    context_json = Column(Text)
 
     __table_args__ = (
         Index("ix_signals_symbol_tf", "symbol", "timeframe"),
@@ -94,3 +95,14 @@ class HighGrowthCandidate(Base):
     technical_indicators = Column(Text)
     notes = Column(Text)
     raw_json = Column(Text)
+
+
+class TradingviewEvent(Base):
+    __tablename__ = "tv_events"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(32), nullable=False, index=True)
+    timeframe = Column(String(24), nullable=False, index=True)
+    bar_time = Column(BigInteger)
+    received_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, index=True)
+    payload_json = Column(Text)

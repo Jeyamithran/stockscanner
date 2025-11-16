@@ -1421,6 +1421,16 @@
                                 <p class="small text-muted mb-0">Waiting for breakout alerts...</p>
                             </div>
                         </div>
+
+                        <div class="card shadow-sm mt-3">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><strong>Technical Snapshot (no AI)</strong></span>
+                                <button class="btn btn-sm btn-outline-secondary" id="technicalSnapshotBtn">Load</button>
+                            </div>
+                            <div class="card-body" id="technicalSnapshotBody">
+                                <p class="small text-muted mb-0">Latest persisted TradingView payload (trend/momentum/vol/structure) without AI inference.</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -4218,6 +4228,8 @@
     const latestSignalCard = document.getElementById('latestSignalCard');
     const refreshSignalsBtn = document.getElementById('refreshSignalsBtn');
     const signalsTableBody = document.getElementById('signalsTableBody');
+    const technicalSnapshotBtn = document.getElementById('technicalSnapshotBtn');
+    const technicalSnapshotBody = document.getElementById('technicalSnapshotBody');
 
     function setLatestSignalCard(sig) {
         if (!sig || !sig.signal) {
@@ -4248,7 +4260,7 @@
         document.getElementById('latestSignalRR').textContent = sig.rr_ratio != null ? Number(sig.rr_ratio).toFixed(2) : '-';
         document.getElementById('latestSignalHorizon').textContent = sig.time_horizon || '-';
         document.getElementById('latestSignalReason').textContent = sig.reason_short || '';
-        document.getElementById('latestSignalUpdatedAt').textContent = sig.created_at || '';
+        document.getElementById('latestSignalUpdatedAt').textContent = formatEST(sig.created_at);
     }
 
     async function fetchLatestSignal() {
@@ -4292,7 +4304,7 @@
         rows.forEach(sig => {
             const tr = document.createElement('tr');
             const cells = [
-                sig.created_at || '',
+                formatEST(sig.created_at),
                 sig.symbol || '',
                 sig.mode || '',
                 sig.analysis_mode || '',
@@ -4357,6 +4369,59 @@
         fetchRecentSignals();
         fetchLatestSignal();
     });
+
+    async function loadTechnicalSnapshot() {
+        if (!technicalSnapshotBody) return;
+        technicalSnapshotBody.innerHTML = '<p class="small text-muted mb-0">Loading...</p>';
+        try {
+            const resp = await fetch('/technical/latest');
+            if (!resp.ok) {
+                technicalSnapshotBody.innerHTML = '<p class="text-danger small mb-0">Failed to load snapshot.</p>';
+                return;
+            }
+            const payload = await resp.json();
+            const data = payload?.data;
+            if (!data) {
+                technicalSnapshotBody.innerHTML = '<p class="small text-muted mb-0">No persisted technical payload yet.</p>';
+                return;
+            }
+            const ctx = data.payload || {};
+            const summary = `
+                <div class="small text-muted mb-2">Received: ${data.received_at || '-'} | Bar: ${data.bar_time || '-'}</div>
+                <div><strong>${data.symbol || ''} • ${data.timeframe || ''}</strong></div>
+                <div class="small mt-2">
+                    <div>Trend: ${ctx.trend ? JSON.stringify(ctx.trend) : '-'}</div>
+                    <div>Momentum: ${ctx.momentum ? JSON.stringify(ctx.momentum) : '-'}</div>
+                    <div>Volatility: ${ctx.volatility ? JSON.stringify(ctx.volatility) : '-'}</div>
+                    <div>Volume: ${ctx.volume_info ? JSON.stringify(ctx.volume_info) : '-'}</div>
+                    <div>Session: ${ctx.session ? JSON.stringify(ctx.session) : '-'}</div>
+                    <div>Risk: ${ctx.risk_settings ? JSON.stringify(ctx.risk_settings) : '-'}</div>
+                </div>
+            `;
+            technicalSnapshotBody.innerHTML = summary;
+        } catch (err) {
+            console.error('technical snapshot error', err);
+            technicalSnapshotBody.innerHTML = '<p class="text-danger small mb-0">Error loading snapshot.</p>';
+        }
+    }
+
+    technicalSnapshotBtn?.addEventListener('click', () => loadTechnicalSnapshot());
+
+    function formatEST(isoString) {
+        if (!isoString) return '';
+        try {
+            const dt = new Date(isoString);
+            return new Intl.DateTimeFormat('en-US', {
+                timeZone: 'America/New_York',
+                month: 'short',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            }).format(dt);
+        } catch (err) {
+            return isoString;
+        }
+    }
 
     // No auto load for scanner/news; you trigger them manually with buttons.
 </script>

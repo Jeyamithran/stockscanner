@@ -24,8 +24,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import xml.etree.ElementTree as ET
 from database import init_db as init_new_db
-from database import SessionLocal as NewSessionLocal
-from models import Signal as SignalRecordModel, AlertHistory, HighGrowthCandidate
+from database import SessionLocal as NewSessionLocal, engine as NewEngine
+from models import Signal as SignalRecordModel, AlertHistory, HighGrowthCandidate, TradingviewEvent
 from services.bars import save_bar_from_payload, get_recent_bars
 from services.signals import run_ai_signal
 from sqlalchemy import (
@@ -38,6 +38,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Index,
+    text,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -321,7 +322,8 @@ def persist_signal_to_db(symbol: str, timeframe: str, signal_payload: Dict[str, 
         confidence=_tv_safe_float(signal_payload.get("confidence")),
         time_horizon=signal_payload.get("time_horizon"),
         reason_short=short_reason,
-        raw_json=json.dumps(signal_payload, ensure_ascii=False)
+        raw_json=json.dumps(signal_payload, ensure_ascii=False),
+        context_json=signal_payload.get("context_json"),
     )
     try:
         with session_scope() as session:
@@ -1121,6 +1123,20 @@ ensure_alert_history_columns()
 load_alert_history_cache()
 # Ensure new SQLAlchemy metadata for bars/signals (refactor modules)
 init_new_db()
+
+
+def ensure_signal_context_column():
+    """Ensure context_json column exists on signals table (Postgres)."""
+    if NewEngine is None:
+        return
+    try:
+        with NewEngine.begin() as conn:
+            conn.execute(text("ALTER TABLE signals ADD COLUMN IF NOT EXISTS context_json TEXT"))
+    except Exception as exc:
+        logging.error("Failed to ensure context_json on signals: %s", exc)
+
+
+ensure_signal_context_column()
 
 
 # -------------------------------------------------------------
@@ -2276,6 +2292,7 @@ def tradingview_webhook():
             if k in safe_payload:
                 safe_payload[k] = "***redacted***"
         logging.info("TradingView webhook payload: %s", json.dumps(safe_payload)[:2000])
+        persist_tv_event(safe_payload)
     except Exception as exc:
         logging.debug("Failed to log TV payload: %s", exc)
 
@@ -3437,6 +3454,32 @@ def persist_high_growth_candidates(candidates: List[Dict[str, Any]], timestamp_i
         logging.error("Failed to persist high growth candidates: %s", exc)
 
 
+def persist_tv_event(payload: Dict[str, Any]) -> None:
+    """Persist full TradingView payload to Postgres (token redacted)."""
+    if NewSessionLocal is None:
+        return
+    try:
+        safe_payload = dict(payload or {})
+        for k in ("token", "secret", "password"):
+            if k in safe_payload:
+                safe_payload[k] = "***redacted***"
+        symbol = (safe_payload.get("symbol") or safe_payload.get("ticker") or "").strip().upper()
+        timeframe = str(safe_payload.get("timeframe") or safe_payload.get("tf") or "").strip()
+        bar_time = safe_payload.get("bar_time") or safe_payload.get("time")
+        with NewSessionLocal() as session:
+            session.add(
+                TradingviewEvent(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    bar_time=int(float(bar_time)) if bar_time else None,
+                    payload_json=json.dumps(safe_payload, ensure_ascii=False)
+                )
+            )
+            session.commit()
+    except Exception as exc:
+        logging.error("Failed to persist TradingView payload: %s", exc)
+
+
 def build_user_prompt(profile: str) -> str:
     if profile == "high_growth":
         return (
@@ -3822,6 +3865,36 @@ def signals_recent():
             return jsonify(data)
     except Exception:
         return jsonify({"success": False, "error": "Failed to fetch recent signals."}), 500
+
+
+@app.route("/technical/latest", methods=["GET"])
+def technical_latest():
+    """Return the most recent TradingView payload (raw technical context) from persisted events."""
+    if NewSessionLocal is None:
+        return jsonify({"success": False, "error": "Database is not configured."}), 500
+    try:
+        with NewSessionLocal() as session:
+            row = (
+                session.query(TradingviewEvent)
+                .order_by(TradingviewEvent.received_at.desc())
+                .first()
+            )
+            if not row:
+                return jsonify({"success": True, "data": None})
+            try:
+                payload = json.loads(row.payload_json or "{}")
+            except Exception:
+                payload = {}
+            data = {
+                "symbol": row.symbol,
+                "timeframe": row.timeframe,
+                "bar_time": row.bar_time,
+                "received_at": row.received_at.isoformat() if row.received_at else None,
+                "payload": payload,
+            }
+            return jsonify({"success": True, "data": data})
+    except Exception:
+        return jsonify({"success": False, "error": "Failed to fetch latest technical payload."}), 500
 
 
 @app.errorhandler(HTTPException)

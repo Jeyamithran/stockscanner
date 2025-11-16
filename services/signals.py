@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional
+import json
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -41,6 +42,7 @@ def run_ai_signal(
         time_horizon=parsed.get("time_horizon"),
         reason_short=parsed.get("reason_short"),
         raw_json=str(parsed),
+        context_json=json.dumps(context, ensure_ascii=False),
     )
     try:
         with SessionLocal() as session:
