@@ -336,6 +336,10 @@ Filters:
 - Volume spike on catalyst day ≥ 150% of 20-day average,
 - Flag contrarian setups where short interest ≥ 15% float but price breaks cleanly on catalyst.
 
+Strict exclusion rule:
+- DO NOT include any ticker unless you can cite a specific catalyst within the last 72h with a date/source in PrimaryCatalyst and a matching CatalystType.
+- Do NOT treat purely technical patterns (e.g., “consolidation breakout”) as catalysts. If a concrete event is not available, exclude the ticker entirely rather than guessing or using placeholders.
+
 OUTPUT: Exactly the ScannerResponse schema. JSON only.
 """ + PROMPT_TARGETING_GUIDELINES + SCANNER_RESPONSE_SCHEMA
 
