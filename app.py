@@ -2616,6 +2616,34 @@ def tradingview_signals_api():
                 elapsed = time.monotonic() - last_run
                 cooldown_remaining = max(0.0, TRADINGVIEW_SIGNAL_COOLDOWN_SECONDS - elapsed)
 
+        # Avoid recomputing if bars are stale; just return existing signal/context
+        if bars:
+            last_ts = bars[-1].get("time")
+            if last_ts:
+                staleness_minutes = float(os.environ.get("TV_SIGNAL_STALENESS_MINUTES", "30"))
+                age_minutes = (datetime.now(timezone.utc) - datetime.fromtimestamp(last_ts, tz=timezone.utc)).total_seconds() / 60.0
+                if age_minutes > staleness_minutes:
+                    return jsonify({
+                        "success": True,
+                        "data": {
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "bars": bars,
+                            "bar_count": len(bars),
+                            "latest_signal": latest_signal,
+                            "context": context_snapshot,
+                            "meta": {
+                                "model": TRADINGVIEW_SIGNAL_MODEL,
+                                "min_bars": TRADINGVIEW_MIN_BARS_FOR_SIGNAL,
+                                "prompt_bar_limit": TRADINGVIEW_PROMPT_BAR_LIMIT,
+                                "signal_inflight": inflight,
+                                "cooldown_remaining": round(cooldown_remaining, 2),
+                                "stale": True,
+                                "stale_minutes": round(age_minutes, 1),
+                            }
+                        }
+                    })
+
         return jsonify({
             "success": True,
             "data": {
@@ -4062,6 +4090,15 @@ def signals_run():
             existing_bars = get_recent_bars(symbol, timeframe, limit=TRADINGVIEW_MAX_BARS)
     if not existing_bars:
         return jsonify({"success": False, "error": "Missing bars for this symbol/timeframe."}), 400
+
+    # Staleness check: reject if last bar is too old
+    last_bar = existing_bars[-1]
+    last_ts = last_bar.time if hasattr(last_bar, "time") else None
+    if last_ts:
+        staleness_minutes = float(os.environ.get("TV_SIGNAL_STALENESS_MINUTES", "30"))
+        age_minutes = (datetime.now(timezone.utc) - last_ts).total_seconds() / 60.0
+        if age_minutes > staleness_minutes:
+            return jsonify({"success": False, "error": f"Bars are stale (last {int(age_minutes)}m ago)."}), 400
 
     cache_key = f"{symbol}::{timeframe}"
     breakout_event = BREAKOUT_EVENT_CACHE.get(cache_key)
