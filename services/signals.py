@@ -8,7 +8,7 @@ from database import SessionLocal
 from models import Signal
 from services.bars import get_recent_bars
 from services.context import build_technical_context
-from services.perplexity_client import call_perplexity, parse_ai_response
+from ai_router import generate_hybrid_signal
 
 
 def run_ai_signal(
@@ -36,11 +36,41 @@ def run_ai_signal(
     }
     try:
         context = build_technical_context(symbol, timeframe, mode, bars, breakout_event, analysis_mode)
-        raw = call_perplexity(context, mode, analysis_mode)
-        parsed = parse_ai_response(raw)
+        # Build router-friendly context
+        price_change_pct = 0.0
+        if bars:
+            start = bars[0].close
+            end = bars[-1].close
+            if start:
+                price_change_pct = ((end - start) / start) * 100.0
+        rvol = context.get("volume", {}).get("relative_volume") or 0
+        signal_context = {
+            "ticker": symbol,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "technical_context": context,
+            "rvol": rvol,
+            "price_change_pct": price_change_pct,
+            "last_news_check": None,
+        }
+        parsed = generate_hybrid_signal(signal_context)
+        raw = json.dumps(parsed, ensure_ascii=False)
     except Exception as exc:
         logging.error("AI signal generation failed for %s %s: %s", symbol, timeframe, exc)
         parsed["reason_short"] = f"Fallback: AI error {type(exc).__name__}"
+
+    # Normalize fields from ChatGPT output to existing schema
+    signal_val = (parsed.get("signal") or "hold").lower()
+    if signal_val in {"long", "buy"}:
+        signal_val = "buy"
+    elif signal_val in {"short", "sell"}:
+        signal_val = "sell"
+    rr_ratio = parsed.get("rr_ratio") or parsed.get("risk_reward")
+    if rr_ratio is None:
+        rr_ratio = parsed.get("risk_reward")
+    reason_short = parsed.get("reason_short") or parsed.get("reasoning_bullets")
+    if isinstance(reason_short, list):
+        reason_short = "; ".join(str(x) for x in reason_short if x)
 
     if SessionLocal is None:
         return None
@@ -50,14 +80,14 @@ def run_ai_signal(
         timeframe=timeframe,
         mode=mode,
         analysis_mode=analysis_mode,
-        signal=str(parsed.get("signal") or "hold"),
+        signal=str(signal_val or "hold"),
         entry=parsed.get("entry"),
         stop=parsed.get("stop"),
         target=parsed.get("target"),
-        rr_ratio=parsed.get("rr_ratio"),
+        rr_ratio=rr_ratio,
         confidence=parsed.get("confidence"),
         time_horizon=parsed.get("time_horizon"),
-        reason_short=parsed.get("reason_short"),
+        reason_short=reason_short,
         raw_json=str(raw or parsed),
         context_json=json.dumps(context or {}, ensure_ascii=False),
     )
