@@ -2593,7 +2593,11 @@ def tradingview_webhook():
 @auth.login_required
 def tradingview_signals_api():
     symbol = (request.args.get("symbol") or request.args.get("ticker") or "").strip().upper()
-    timeframe = (request.args.get("tf") or request.args.get("timeframe") or "").strip()
+    timeframe_raw = (request.args.get("tf") or request.args.get("timeframe") or "").strip()
+    timeframe_norm = timeframe_raw.lower()
+    if timeframe_norm.endswith("m"):
+        timeframe_norm = timeframe_norm[:-1]
+    timeframe = timeframe_norm
     limit_param = request.args.get("limit")
     try:
         limit = int(limit_param) if limit_param else TRADINGVIEW_PROMPT_BAR_LIMIT
