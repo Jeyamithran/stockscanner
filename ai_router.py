@@ -88,7 +88,9 @@ def get_chatgpt_signal(
             temperature=0.2,
         )
         raw = resp.choices[0].message.content or ""
-        return json.loads(raw)
+        data = json.loads(raw)
+        data.setdefault("model", "gpt-4.1-mini")
+        return data
     except Exception as exc:
         logging.error("ChatGPT signal failed for %s %s: %s", ticker, timeframe, exc)
         return {
@@ -102,6 +104,7 @@ def get_chatgpt_signal(
             "confidence": 0,
             "reasoning_bullets": ["AI error encountered."],
             "news_influence": "NONE",
+            "model": "gpt-4.1-mini",
             "error_message": str(exc),
         }
 
@@ -112,11 +115,17 @@ def generate_hybrid_signal(signal_context: Dict[str, Any]) -> Dict[str, Any]:
     technical_context = signal_context.get("technical_context") or {}
 
     news_summary = ""
+    news_model = None
     try:
         if should_check_news(signal_context):
             news_summary = get_perplexity_news(ticker)
+            news_model = "sonar-small-online"
     except Exception as exc:
         logging.error("News routing failed for %s: %s", ticker, exc)
         news_summary = ""
 
-    return get_chatgpt_signal(ticker, timeframe, technical_context, news_summary)
+    result = get_chatgpt_signal(ticker, timeframe, technical_context, news_summary)
+    result.setdefault("model", "gpt-4.1-mini")
+    if news_model:
+        result.setdefault("news_model", news_model)
+    return result

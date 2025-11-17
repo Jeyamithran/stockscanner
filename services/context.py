@@ -75,6 +75,49 @@ def _relative_volume(volumes: List[float], window: int = 20) -> Optional[float]:
     return volumes[-1] / avg
 
 
+def _volume_split(bars: List[Bar], window: int = 20) -> Dict[str, Any]:
+    """Compute simple buy/sell volume proxies based on candle direction for last N bars."""
+    if not bars:
+        return {
+            "buy_volume": None,
+            "sell_volume": None,
+            "buy_volume_pct": None,
+            "sell_volume_pct": None,
+            "buy_sell_ratio": None,
+            "dominant_side": None,
+        }
+    window = min(window, len(bars))
+    total_buy = 0.0
+    total_sell = 0.0
+    for b in bars[-window:]:
+        if b.close > b.open:
+            total_buy += b.volume or 0.0
+        elif b.close < b.open:
+            total_sell += b.volume or 0.0
+        else:
+            # Flat candle: do not count toward either
+            pass
+    total_vol = total_buy + total_sell
+    buy_pct = (total_buy / total_vol * 100.0) if total_vol else None
+    sell_pct = (total_sell / total_vol * 100.0) if total_vol else None
+    ratio = (total_buy / total_sell) if total_sell else (total_buy if total_buy else None)
+    dominant = None
+    if total_buy > total_sell:
+        dominant = "buy"
+    elif total_sell > total_buy:
+        dominant = "sell"
+    else:
+        dominant = "mixed"
+    return {
+        "buy_volume": total_buy if total_vol else None,
+        "sell_volume": total_sell if total_vol else None,
+        "buy_volume_pct": buy_pct,
+        "sell_volume_pct": sell_pct,
+        "buy_sell_ratio": ratio,
+        "dominant_side": dominant,
+    }
+
+
 def _supertrend(bars: List[Bar], period: int = 10, multiplier: float = 3.0) -> Dict[str, Any]:
     if len(bars) < period + 1:
         return {}
@@ -197,6 +240,7 @@ def build_technical_context(
     supertrend = _supertrend(bars)
     micro = _microstructure(bars)
     structure = _structure(bars)
+    vol_split = _volume_split(bars)
     ema_9 = _ema(closes, 9)
     ema_21 = _ema(closes, 21)
     ema_50 = _ema(closes, 50)
@@ -234,6 +278,12 @@ def build_technical_context(
             "last_volume": volumes[-1] if volumes else None,
             "relative_volume": rv,
             "volume_spike": rv is not None and rv > 1.5,
+            "buy_volume": vol_split.get("buy_volume"),
+            "sell_volume": vol_split.get("sell_volume"),
+            "buy_volume_pct": vol_split.get("buy_volume_pct"),
+            "sell_volume_pct": vol_split.get("sell_volume_pct"),
+            "buy_sell_ratio": vol_split.get("buy_sell_ratio"),
+            "dominant_side": vol_split.get("dominant_side"),
         },
         "structure": structure,
         "structural_levels": {

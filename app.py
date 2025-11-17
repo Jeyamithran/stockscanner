@@ -646,24 +646,28 @@ class TradingViewRelay:
         timeframe_clean = str(timeframe or "").strip()
         return f"{symbol_clean}::{timeframe_clean}"
 
-    def _normalize_bar(self, symbol_val: str, timeframe_val: str, bar: Dict[str, Any]) -> Dict[str, Any]:
-        epoch = _tv_epoch_seconds(bar.get("time"))
-        if epoch is None:
-            raise ValueError("Invalid or missing bar timestamp.")
-        normalized = {
-            "symbol": symbol_val,
-            "timeframe": timeframe_val,
-            "time": epoch,
-            "time_iso": _tv_iso(epoch),
-            "open": _tv_safe_float(bar.get("open")),
-            "high": _tv_safe_float(bar.get("high")),
-            "low": _tv_safe_float(bar.get("low")),
-            "close": _tv_safe_float(bar.get("close")),
-            "volume": _tv_safe_float(bar.get("volume")) or 0.0,
-        }
-        if normalized["close"] is None:
-            raise ValueError("Close price is required for TradingView ingestion.")
-        return normalized
+def _normalize_bar(self, symbol_val: str, timeframe_val: str, bar: Dict[str, Any]) -> Dict[str, Any]:
+    epoch = _tv_epoch_seconds(bar.get("time"))
+    if epoch is None:
+        raise ValueError("Invalid or missing bar timestamp.")
+    vol_up = _tv_safe_float(bar.get("vol_up"))
+    vol_down = _tv_safe_float(bar.get("vol_down"))
+    normalized = {
+        "symbol": symbol_val,
+        "timeframe": timeframe_val,
+        "time": epoch,
+        "time_iso": _tv_iso(epoch),
+        "open": _tv_safe_float(bar.get("open")),
+        "high": _tv_safe_float(bar.get("high")),
+        "low": _tv_safe_float(bar.get("low")),
+        "close": _tv_safe_float(bar.get("close")),
+        "volume": _tv_safe_float(bar.get("volume")) or 0.0,
+        "vol_up": vol_up if vol_up is not None else None,
+        "vol_down": vol_down if vol_down is not None else None,
+    }
+    if normalized["close"] is None:
+        raise ValueError("Close price is required for TradingView ingestion.")
+    return normalized
 
     def add_bar(self, symbol: str, timeframe: str, bar: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
         key = self.stream_key(symbol, timeframe)
@@ -4065,6 +4069,15 @@ def signals_run():
     if signal_row is None:
         return jsonify({"success": False, "error": "Failed to generate signal (missing bars or AI error)."}), 500
 
+    model = None
+    news_model = None
+    try:
+        raw_obj = json.loads(signal_row.raw_json or "{}")
+        model = raw_obj.get("model")
+        news_model = raw_obj.get("news_model")
+    except Exception:
+        model = None
+
     return jsonify({
         "success": True,
         "data": {
@@ -4082,6 +4095,8 @@ def signals_run():
             "confidence": signal_row.confidence,
             "time_horizon": signal_row.time_horizon,
             "reason_short": signal_row.reason_short,
+            "model": model,
+            "news_model": news_model,
         }
     })
 
@@ -4125,7 +4140,15 @@ def signals_latest():
                 "confidence": row.confidence,
                 "time_horizon": row.time_horizon,
                 "reason_short": row.reason_short,
+                "model": None,
+                "news_model": None,
             }
+            try:
+                raw_obj = json.loads(row.raw_json or "{}")
+                data["model"] = raw_obj.get("model")
+                data["news_model"] = raw_obj.get("news_model")
+            except Exception:
+                pass
             return jsonify({"success": True, "data": data})
     except Exception:
         return jsonify({"success": False, "error": "Failed to fetch latest signal."}), 500
@@ -4166,9 +4189,19 @@ def signals_recent():
                     "confidence": row.confidence,
                     "time_horizon": row.time_horizon,
                     "reason_short": row.reason_short,
+                    "model": None,
+                    "news_model": None,
                 }
                 for row in rows
             ]
+            # try to extract model from raw_json if present
+            for idx, row in enumerate(rows):
+                try:
+                    raw_obj = json.loads(row.raw_json or "{}")
+                    data[idx]["model"] = raw_obj.get("model")
+                    data[idx]["news_model"] = raw_obj.get("news_model")
+                except Exception:
+                    continue
             return jsonify(data)
     except Exception:
         return jsonify({"success": False, "error": "Failed to fetch recent signals."}), 500
