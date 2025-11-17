@@ -1413,9 +1413,14 @@
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <div>
                                 <h6 class="mb-0">Chart</h6>
-                                <small class="text-muted">Candles + volume with AI overlays.</small>
+                                <small class="text-muted">Candles + volume with AI overlays. If no stream is listed, load by symbol/timeframe manually.</small>
                             </div>
-                            <button class="btn btn-sm btn-outline-light" id="tvRefreshChartBtn">Refresh</button>
+                            <div class="d-flex gap-2 align-items-center">
+                                <input type="text" class="form-control form-control-sm" id="tvManualSymbol" placeholder="Symbol (e.g., SPY)" style="width: 110px;">
+                                <input type="text" class="form-control form-control-sm" id="tvManualTimeframe" placeholder="TF (e.g., 5 or 15)" style="width: 90px;">
+                                <button class="btn btn-sm btn-outline-light" id="tvManualLoadBtn" type="button">Load</button>
+                                <button class="btn btn-sm btn-outline-light" id="tvRefreshChartBtn">Refresh</button>
+                            </div>
                         </div>
                         <div class="card-body" style="height: 360px;">
                             <div id="tvChartContainer" style="width: 100%; height: 100%;"></div>
@@ -3286,6 +3291,9 @@
     const tvTab = document.getElementById('tv-tab');
     const tvRefreshBtn = document.getElementById('tvRefreshBtn');
     const tvDetailRefreshBtn = document.getElementById('tvDetailRefreshBtn');
+    const tvManualSymbolInput = document.getElementById('tvManualSymbol');
+    const tvManualTfInput = document.getElementById('tvManualTimeframe');
+    const tvManualLoadBtn = document.getElementById('tvManualLoadBtn');
     const tvStreamsBody = document.getElementById('tvStreamsBody');
     const tvSignalCard = document.getElementById('tvSignalCard');
     const tvChartContainer = document.getElementById('tvChartContainer');
@@ -3942,6 +3950,12 @@
 
     tvRefreshBtn?.addEventListener('click', fetchTradingviewStreams);
     tvDetailRefreshBtn?.addEventListener('click', () => fetchTradingviewSignalDetail(false));
+    tvManualLoadBtn?.addEventListener('click', () => {
+        const sym = (tvManualSymbolInput?.value || '').trim().toUpperCase();
+        const tf = (tvManualTfInput?.value || '').trim();
+        if (!sym || !tf) return;
+        selectTradingviewStream({ symbol: sym, timeframe: tf });
+    });
 
     tvTab?.addEventListener('shown.bs.tab', () => {
         if (!tvStreams.length) {
