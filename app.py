@@ -4088,6 +4088,24 @@ def signals_run():
                 for bar in relay_bars
             ])
             existing_bars = get_recent_bars(symbol, timeframe, limit=TRADINGVIEW_MAX_BARS)
+    # fallback: fetch via app DB helper if still empty
+    if not existing_bars:
+        from types import SimpleNamespace
+        dict_bars = fetch_recent_bars_from_db(symbol, timeframe, TRADINGVIEW_MAX_BARS)
+        if dict_bars:
+            existing_bars = [
+                SimpleNamespace(
+                    symbol=b.get("symbol"),
+                    timeframe=b.get("timeframe"),
+                    time=datetime.fromtimestamp(b.get("time"), tz=timezone.utc) if b.get("time") else None,
+                    open=b.get("open"),
+                    high=b.get("high"),
+                    low=b.get("low"),
+                    close=b.get("close"),
+                    volume=b.get("volume"),
+                )
+                for b in dict_bars
+            ]
     if not existing_bars:
         return jsonify({"success": False, "error": "Missing bars for this symbol/timeframe."}), 400
 
