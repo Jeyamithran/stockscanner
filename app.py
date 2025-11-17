@@ -646,28 +646,28 @@ class TradingViewRelay:
         timeframe_clean = str(timeframe or "").strip()
         return f"{symbol_clean}::{timeframe_clean}"
 
-def _normalize_bar(self, symbol_val: str, timeframe_val: str, bar: Dict[str, Any]) -> Dict[str, Any]:
-    epoch = _tv_epoch_seconds(bar.get("time"))
-    if epoch is None:
-        raise ValueError("Invalid or missing bar timestamp.")
-    vol_up = _tv_safe_float(bar.get("vol_up"))
-    vol_down = _tv_safe_float(bar.get("vol_down"))
-    normalized = {
-        "symbol": symbol_val,
-        "timeframe": timeframe_val,
-        "time": epoch,
-        "time_iso": _tv_iso(epoch),
-        "open": _tv_safe_float(bar.get("open")),
-        "high": _tv_safe_float(bar.get("high")),
-        "low": _tv_safe_float(bar.get("low")),
-        "close": _tv_safe_float(bar.get("close")),
-        "volume": _tv_safe_float(bar.get("volume")) or 0.0,
-        "vol_up": vol_up if vol_up is not None else None,
-        "vol_down": vol_down if vol_down is not None else None,
-    }
-    if normalized["close"] is None:
-        raise ValueError("Close price is required for TradingView ingestion.")
-    return normalized
+    def _normalize_bar(self, symbol_val: str, timeframe_val: str, bar: Dict[str, Any]) -> Dict[str, Any]:
+        epoch = _tv_epoch_seconds(bar.get("time"))
+        if epoch is None:
+            raise ValueError("Invalid or missing bar timestamp.")
+        vol_up = _tv_safe_float(bar.get("vol_up"))
+        vol_down = _tv_safe_float(bar.get("vol_down"))
+        normalized = {
+            "symbol": symbol_val,
+            "timeframe": timeframe_val,
+            "time": epoch,
+            "time_iso": _tv_iso(epoch),
+            "open": _tv_safe_float(bar.get("open")),
+            "high": _tv_safe_float(bar.get("high")),
+            "low": _tv_safe_float(bar.get("low")),
+            "close": _tv_safe_float(bar.get("close")),
+            "volume": _tv_safe_float(bar.get("volume")) or 0.0,
+            "vol_up": vol_up if vol_up is not None else None,
+            "vol_down": vol_down if vol_down is not None else None,
+        }
+        if normalized["close"] is None:
+            raise ValueError("Close price is required for TradingView ingestion.")
+        return normalized
 
     def add_bar(self, symbol: str, timeframe: str, bar: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
         key = self.stream_key(symbol, timeframe)
