@@ -250,6 +250,14 @@ def build_technical_context(
     rv = _relative_volume(volumes, 20)
     macd_vals = _macd(closes)
 
+    # Levels from payload if present on the most recent bar (assumes TradingView webhook provided them)
+    levels = {}
+    try:
+        latest_event = breakout_event or {}
+        levels = latest_event.get("levels") or {}
+    except Exception:
+        levels = {}
+
     context = {
         "symbol": symbol,
         "timeframe": timeframe,
@@ -297,6 +305,7 @@ def build_technical_context(
         },
         "microstructure": micro,
         "position": {"side": "flat"},
+        "levels": levels or {},
         "session": {},
         "event_flags": {},
         "breakout_context": breakout_event or {},
