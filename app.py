@@ -2535,6 +2535,8 @@ def tradingview_webhook():
         value = payload.get(key)
         if isinstance(value, dict) and value:
             indicator_sections[key] = value
+    if isinstance(payload.get("levels"), dict):
+        indicator_sections["levels"] = payload["levels"]
     if isinstance(payload.get("bars_meta"), dict):
         indicator_sections["bars_meta"] = payload["bars_meta"]
     if payload.get("bar_time"):

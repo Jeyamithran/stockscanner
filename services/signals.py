@@ -36,6 +36,11 @@ def run_ai_signal(
     }
     try:
         context = build_technical_context(symbol, timeframe, mode, bars, breakout_event, analysis_mode)
+        # enrich with metadata levels from relay if available
+        from app import tradingview_relay  # lazy import to avoid cycles
+        metadata = tradingview_relay.get_metadata(symbol, timeframe)
+        if metadata and isinstance(metadata.get("levels"), dict):
+            context["levels"] = metadata.get("levels")
         # Build router-friendly context
         price_change_pct = 0.0
         if bars:
