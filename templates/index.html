@@ -5126,6 +5126,21 @@
         }
         rows.forEach(sig => {
             const tr = document.createElement('tr');
+            tr.style.cursor = 'pointer';
+            tr.addEventListener('click', () => {
+                const symbolInputEl = document.getElementById('symbolInput');
+                const timeframeSelect = document.getElementById('timeframeInput');
+                const modeDay = document.getElementById('modeDay');
+                const modeSwing = document.getElementById('modeSwing');
+                const analysisTech = document.getElementById('analysisTech');
+                const analysisNews = document.getElementById('analysisNewsTech');
+                if (symbolInputEl) symbolInputEl.value = sig.symbol || '';
+                if (timeframeSelect) timeframeSelect.value = sig.timeframe || timeframeSelect.value;
+                if (sig.mode === 'day' && modeDay) modeDay.checked = true;
+                if (sig.mode === 'swing' && modeSwing) modeSwing.checked = true;
+                if (sig.analysis_mode === 'technical' && analysisTech) analysisTech.checked = true;
+                if (sig.analysis_mode === 'news_tech' && analysisNews) analysisNews.checked = true;
+            });
             const cells = [
                 formatEST(sig.created_at),
                 sig.symbol || '',
