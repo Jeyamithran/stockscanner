@@ -3849,6 +3849,53 @@
             name: 'Volume',
             hovertemplate: 'Time: %{x|%Y-%m-%d %H:%M}<br>Volume: %{y:.0f}<extra></extra>'
         };
+        const lastTime = times[times.length - 1];
+        const decisionMarker = {
+            x: [lastTime],
+            y: [closes[closes.length - 1]],
+            mode: 'markers+text',
+            text: [signal.signal ? signal.signal.toUpperCase() : ''],
+            textposition: 'top center',
+            marker: {
+                size: 12,
+                color: signal.signal === 'buy' ? '#16a34a' : signal.signal === 'sell' ? '#dc3545' : '#6c757d'
+            },
+            name: 'Decision'
+        };
+        const levelMarkers = [];
+        if (signal.entry != null) {
+            levelMarkers.push({
+                x: [lastTime],
+                y: [signal.entry],
+                mode: 'markers+text',
+                text: ['Entry'],
+                textposition: 'middle right',
+                marker: { size: 10, color: '#0d6efd' },
+                name: 'Entry'
+            });
+        }
+        if (signal.stop != null) {
+            levelMarkers.push({
+                x: [lastTime],
+                y: [signal.stop],
+                mode: 'markers+text',
+                text: ['Stop'],
+                textposition: 'middle right',
+                marker: { size: 10, color: '#dc3545' },
+                name: 'Stop'
+            });
+        }
+        if (signal.target != null) {
+            levelMarkers.push({
+                x: [lastTime],
+                y: [signal.target],
+                mode: 'markers+text',
+                text: ['Target'],
+                textposition: 'middle right',
+                marker: { size: 10, color: '#198754' },
+                name: 'Target'
+            });
+        }
         const shapes = [];
         if (signal.entry != null) {
             shapes.push({
@@ -3886,7 +3933,7 @@
             plot_bgcolor: '#0b0f19',
             font: { color: '#d1d5db' }
         };
-        Plotly.newPlot(tvChartContainer, [candleTrace, volumeTrace], layout, { responsive: true });
+        Plotly.newPlot(tvChartContainer, [candleTrace, volumeTrace, decisionMarker, ...levelMarkers], layout, { responsive: true });
     }
 
     tvRefreshChartBtn?.addEventListener('click', () => {
