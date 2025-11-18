@@ -1144,11 +1144,12 @@ def fetch_all_alert_rows(limit: int = None) -> List[Dict[str, Any]]:
     ]
 
 
+# Ensure new SQLAlchemy metadata for bars/signals (refactor modules)
+init_new_db()
+
 init_alert_history_db()
 ensure_alert_history_columns()
 load_alert_history_cache()
-# Ensure new SQLAlchemy metadata for bars/signals (refactor modules)
-init_new_db()
 
 
 def ensure_signal_context_column():
