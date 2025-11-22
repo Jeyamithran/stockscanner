@@ -1,0 +1,298 @@
+//@version=6
+indicator("AI Predict Pro - Daytrade Edition", shorttitle="AI-PredDT", overlay=true, precision=2, max_labels_count=500, max_lines_count=500, max_boxes_count=50)
+
+// ======================
+// USER INPUTS
+// ======================
+grp_prediction = "Prediction Engine"
+grp_forecast   = "Forecast Display"
+grp_trend      = "Trend + Filters"
+grp_session    = "Session Control"
+grp_market     = "Market Context"
+
+min_score            = input.float(6.0, "Min Score", minval=4.0, maxval=8.0, group=grp_prediction, tooltip="Base model score needed before any directional bias is trusted.")
+confidence_threshold = input.float(0.7, "Confidence Level", minval=0.3, maxval=0.9, group=grp_prediction, tooltip="Minimum confidence used as the anchor for all signal thresholds.")
+signal_cooldown_bars = input.int(4, "Cooldown Bars per Signal", minval=1, maxval=20, group=grp_prediction, tooltip="Prevents back-to-back alerts on every bar.")
+
+show_forecast        = input.bool(true, "Show Forecast", group=grp_forecast)
+forecast_length      = input.int(10, "Forecast Bars", minval=5, maxval=20, group=grp_forecast)
+
+htf_tf               = input.timeframe("60", "HTF Confirmation (EMA)", group=grp_trend)
+supertrend_factor    = input.float(2.5, "Supertrend Mult", minval=1.0, maxval=5.0, group=grp_trend)
+supertrend_period    = input.int(10, "Supertrend ATR Len", minval=5, maxval=50, group=grp_trend)
+
+regular_hours_only   = input.bool(false, "Only Cash Session", group=grp_session, tooltip="Filters overnight / premarket bars when enabled.")
+
+use_breadth_filter   = input.bool(false, "Use Breadth Filter", group=grp_market)
+breadth_symbol_input = input.string("SP:SPXADP", "Breadth Symbol", inline="BRD", group=grp_market)
+breadth_timeframe    = input.timeframe("15", "Breadth Timeframe", inline="BRD", group=grp_market)
+
+use_vix_filter       = input.bool(false, "Use VIX Filter", group=grp_market)
+vix_symbol_input     = input.string("CBOE:VIX", "VIX Symbol", inline="VIX", group=grp_market)
+vix_timeframe        = input.timeframe("15", "VIX Timeframe", inline="VIX", group=grp_market)
+
+// ======================
+// CORE HELPERS
+// ======================
+get_momentum_strength(period) =>
+    (close - close[period]) / close[period]
+
+get_volume_pressure() =>
+    vol_avg = ta.sma(volume, 20)
+    volume > vol_avg ? (close - open) / math.max(high - low, syminfo.mintick) : 0
+
+get_trend_strength() =>
+    ema_9 = ta.ema(close, 9)
+    ema_21 = ta.ema(close, 21)
+    ema_50 = ta.ema(close, 50)
+    align = ema_9 > ema_21 and ema_21 > ema_50 ? 1 : ema_9 < ema_21 and ema_21 < ema_50 ? -1 : 0
+    slope = (ema_9 - ema_9[5]) / math.max(ema_9[5], syminfo.mintick)
+    align * (1 + math.abs(slope))
+
+// ======================
+// INDICATORS
+// ======================
+rsi         = ta.rsi(close, 14)
+rsi_trend   = ta.linreg(rsi, 5, 0)
+atr         = ta.atr(14)
+normalized_atr = atr / close
+atr_ma      = ta.sma(normalized_atr, 50)
+low_volatility = normalized_atr < atr_ma * 0.7
+obv         = ta.obv
+obv_ema     = ta.ema(obv, 10)
+obv_trend   = obv > obv_ema
+
+[plusDI, minusDI, dmiAdx] = ta.dmi(14, 14)
+adx = dmiAdx
+
+vwap_val    = ta.vwap
+vwapStretch = (close - vwap_val) / vwap_val
+
+htfClose    = request.security(syminfo.tickerid, htf_tf, close)
+htfEma21    = request.security(syminfo.tickerid, htf_tf, ta.ema(close, 21))
+htfEma50    = request.security(syminfo.tickerid, htf_tf, ta.ema(close, 50))
+htfAlignedBull = htfClose > htfEma21 and htfEma21 > htfEma50
+htfAlignedBear = htfClose < htfEma21 and htfEma21 < htfEma50
+
+[supertrendLine, supertrendDir] = ta.supertrend(supertrend_factor, supertrend_period)
+supertrendBull = supertrendDir == 1
+supertrendBear = supertrendDir == -1
+
+// Market context (breadth + VIX trend)
+float breadth_val = na
+float breadth_sma = na
+if use_breadth_filter and str.length(breadth_symbol_input) > 0
+    breadth_val := request.security(breadth_symbol_input, breadth_timeframe, close, gaps=barmerge.gaps_on, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+    breadth_sma := ta.sma(breadth_val, 5)
+
+float vix_val = na
+float vix_sma = na
+if use_vix_filter and str.length(vix_symbol_input) > 0
+    vix_val := request.security(vix_symbol_input, vix_timeframe, close, gaps=barmerge.gaps_on, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+    vix_sma := ta.sma(vix_val, 5)
+
+breadth_data_ready = use_breadth_filter and not na(breadth_val) and not na(breadth_sma)
+vix_data_ready     = use_vix_filter and not na(vix_val) and not na(vix_sma)
+
+breadthBullish  = not use_breadth_filter or (breadth_data_ready and breadth_val > 0 and breadth_val > breadth_sma)
+breadthBearish  = not use_breadth_filter or (breadth_data_ready and breadth_val < 0 and breadth_val < breadth_sma)
+vixCooling      = not use_vix_filter or (vix_data_ready and vix_val <= vix_sma)
+vixHeating      = not use_vix_filter or (vix_data_ready and vix_val > vix_sma)
+
+// ======================
+// PREDICTION ENGINE
+// ======================
+calculate_prediction() =>
+    short_mom      = get_momentum_strength(3)
+    medium_mom     = get_momentum_strength(8)
+    momentum_score = (short_mom * 0.6 + medium_mom * 0.4) * 100
+    trend_score    = get_trend_strength() * 10
+    volume_score   = get_volume_pressure() * 20
+    obv_score      = obv_trend ? 3 : -3
+    rsi_score      = rsi_trend * 0.6
+    adx_score      = adx > 22 ? (plusDI > minusDI ? 6 : -6) : 0
+    vwap_score     = math.abs(vwapStretch) < 0.01 ? 0 : vwapStretch > 0 ? 4 : -4
+    total_score    = momentum_score + trend_score + volume_score + obv_score + rsi_score + adx_score + vwap_score
+    dir            = total_score > min_score ? 1 : total_score < -min_score ? -1 : 0
+    max_component  = math.max(math.abs(momentum_score), math.abs(trend_score), math.abs(volume_score), math.abs(obv_score), math.abs(rsi_score), math.abs(adx_score), math.abs(vwap_score))
+    conf_from_total = math.abs(total_score) / 45
+    conf_from_component = max_component / 12
+    conf           = math.min(math.max(conf_from_total, conf_from_component), 1.0)
+    [dir, conf, total_score]
+
+[pred_dir, pred_conf, total_score] = calculate_prediction()
+
+// ======================
+// FORECAST
+// ======================
+var line[] forecast_lines = array.new_line()
+var label  forecast_label = na
+
+if barstate.islast and show_forecast
+    if array.size(forecast_lines) > 0
+        for i = 0 to array.size(forecast_lines) - 1
+            line.delete(array.get(forecast_lines, i))
+        array.clear(forecast_lines)
+    if not na(forecast_label)
+        label.delete(forecast_label)
+        forecast_label := na
+
+    float[] forecast_prices = array.new_float(forecast_length)
+    base_price     = close
+    atr_current    = math.max(atr, syminfo.mintick)
+    score_magnifier = math.max(math.abs(total_score) / 50, 0.2)
+    scaling_factor = score_magnifier * 0.5
+
+    for i = 1 to forecast_length
+        projected_move = pred_dir * pred_conf * atr_current * i * scaling_factor
+        forecast_price = base_price + projected_move
+        array.set(forecast_prices, i - 1, forecast_price)
+
+    line_color = pred_dir > 0 ? (pred_conf > 0.8 ? color.green : color.lime) :
+                 pred_dir < 0 ? (pred_conf > 0.8 ? color.red : color.maroon) : color.gray
+    line_style = pred_conf > confidence_threshold ? line.style_solid : line.style_dashed
+
+    for i = 1 to forecast_length - 1
+        id = line.new(bar_index + i - 1,
+                      array.get(forecast_prices, i - 1),
+                      bar_index + i,
+                      array.get(forecast_prices, i),
+                      color=line_color, style=line_style, width=2)
+        array.push(forecast_lines, id)
+
+    forecast_text = pred_dir > 0 ? "BULL" : pred_dir < 0 ? "BEAR" : "FLAT"
+    conf_text     = "Conf: " + str.tostring(math.round(pred_conf * 100, 0)) + "%"
+    if array.size(forecast_prices) >= forecast_length
+        forecast_label := label.new(bar_index + forecast_length,
+                                    array.get(forecast_prices, forecast_length - 1),
+                                    forecast_text + "\n" + conf_text,
+                                    color=line_color, textcolor=color.white, style=label.style_label_center)
+
+// ======================
+// SIGNAL FILTERS
+// ======================
+ema9  = ta.ema(close, 9)
+ema21 = ta.ema(close, 21)
+ema50 = ta.ema(close, 50)
+
+trendAlignedBull = ema9 > ema21 and ema21 > ema50
+trendAlignedBear = ema9 < ema21 and ema21 < ema50
+solidMomentumUp  = close > ta.highest(high, 6) and rsi > 55
+solidMomentumDn  = close < ta.lowest(low, 6) and rsi < 45
+healthyVol       = ta.sma(volume, 5) > ta.sma(volume, 20) or obv_trend
+
+strongConfidence = math.max(confidence_threshold + 0.1, 0.8)
+setupConfidence  = math.max(confidence_threshold, 0.65)
+
+strongScoreThreshold = math.max(min_score * 4.0, 24.0)
+setupScoreThreshold  = math.max(min_score * 2.3, 14.0)
+
+cashSession = not na(time(timeframe.period, "0930-1600"))
+sessionOk   = not regular_hours_only or cashSession
+
+breadthOkBull = breadthBullish and vixCooling
+breadthOkBear = breadthBearish and vixHeating
+
+var int lastBullSignalBar = na
+var int lastBearSignalBar = na
+
+bullCooldownOk = na(lastBullSignalBar) or bar_index - lastBullSignalBar >= signal_cooldown_bars
+bearCooldownOk = na(lastBearSignalBar) or bar_index - lastBearSignalBar >= signal_cooldown_bars
+
+trendContextBull = supertrendBull or htfAlignedBull
+trendContextBear = supertrendBear or htfAlignedBear
+
+strong_bull_signal = sessionOk and bullCooldownOk and trendAlignedBull and trendContextBull and solidMomentumUp and healthyVol and adx > 22 and plusDI > minusDI and pred_conf >= strongConfidence and total_score > strongScoreThreshold and breadthOkBull
+strong_bear_signal = sessionOk and bearCooldownOk and trendAlignedBear and trendContextBear and solidMomentumDn and healthyVol and adx > 22 and minusDI > plusDI and pred_conf >= strongConfidence and total_score < -strongScoreThreshold and breadthOkBear
+
+bull_setup = sessionOk and bullCooldownOk and trendAlignedBull and trendContextBull and solidMomentumUp and pred_conf >= setupConfidence and total_score > setupScoreThreshold and healthyVol and adx > 18 and breadthOkBull
+bear_setup = sessionOk and bearCooldownOk and trendAlignedBear and trendContextBear and solidMomentumDn and pred_conf >= setupConfidence and total_score < -setupScoreThreshold and healthyVol and adx > 18 and breadthOkBear
+
+if strong_bull_signal or bull_setup
+    lastBullSignalBar := bar_index
+if strong_bear_signal or bear_setup
+    lastBearSignalBar := bar_index
+
+bullInvalidate = ta.lowest(low, 3)
+bearInvalidate = ta.highest(high, 3)
+
+// ======================
+// LABELS
+// ======================
+if barstate.isconfirmed
+    if strong_bull_signal
+        label.new(bar_index, low, "STRONG BUY\nInv: " + str.tostring(bullInvalidate, format.percent), color=color.green, textcolor=color.white, style=label.style_label_up, yloc=yloc.belowbar, size=size.large)
+    if strong_bear_signal
+        label.new(bar_index, high, "STRONG SELL\nInv: " + str.tostring(bearInvalidate, format.percent), color=color.red, textcolor=color.white, style=label.style_label_down, yloc=yloc.abovebar, size=size.large)
+    if bull_setup and not strong_bull_signal
+        label.new(bar_index, low, "BUY SETUP", color=color.lime, textcolor=color.black, style=label.style_label_up, yloc=yloc.belowbar)
+    if bear_setup and not strong_bear_signal
+        label.new(bar_index, high, "SELL SETUP", color=color.maroon, textcolor=color.white, style=label.style_label_down, yloc=yloc.abovebar)
+
+// ======================
+// DASHBOARD
+// ======================
+var table dashboard = table.new(position.top_right, 2, 9, bgcolor=color.new(#1A1A1A, 95), border_width=1)
+
+if barstate.islast
+    table.cell(dashboard, 0, 0, "AI", bgcolor=color.purple, text_color=color.white)
+    table.cell(dashboard, 1, 0, "DAYTRADE", bgcolor=color.purple, text_color=color.white)
+
+    table.cell(dashboard, 0, 1, "SCORE", text_color=color.gray)
+    score_color = total_score > 30 ? color.green : total_score < -30 ? color.red : total_score > 15 ? color.lime : total_score < -15 ? color.orange : color.gray
+    table.cell(dashboard, 1, 1, str.tostring(math.round(total_score, 1)), text_color=score_color)
+
+    table.cell(dashboard, 0, 2, "DIRECTION", text_color=color.gray)
+    dir_text  = pred_dir > 0 ? "BULLISH" : pred_dir < 0 ? "BEARISH" : "NEUTRAL"
+    dir_color = pred_dir > 0 ? color.green : pred_dir < 0 ? color.red : color.gray
+    table.cell(dashboard, 1, 2, dir_text, text_color=dir_color)
+
+    table.cell(dashboard, 0, 3, "CONFIDENCE", text_color=color.gray)
+    conf_color = pred_conf > 0.8 ? color.green : pred_conf > 0.6 ? color.lime : pred_conf > 0.4 ? color.orange : color.red
+    table.cell(dashboard, 1, 3, str.tostring(math.round(pred_conf * 100, 0)) + "%", text_color=conf_color)
+
+    table.cell(dashboard, 0, 4, "SIGNAL", text_color=color.gray)
+    signal_text = strong_bull_signal ? "STRONG BUY" : strong_bear_signal ? "STRONG SELL" : bull_setup ? "BUY SETUP" : bear_setup ? "SELL SETUP" : "NO SIGNAL"
+    signal_color = strong_bull_signal ? color.green : strong_bear_signal ? color.red : bull_setup ? color.lime : bear_setup ? color.maroon : color.gray
+    table.cell(dashboard, 1, 4, signal_text, text_color=signal_color)
+
+    table.cell(dashboard, 0, 5, "VOLATILITY", text_color=color.gray)
+    table.cell(dashboard, 1, 5, low_volatility ? "LOW" : "HIGH", text_color=low_volatility ? color.blue : color.orange)
+
+    table.cell(dashboard, 0, 6, "RSI TREND", text_color=color.gray)
+    table.cell(dashboard, 1, 6, rsi_trend > 0 ? "UP" : "DOWN", text_color=rsi_trend > 0 ? color.green : color.red)
+
+    table.cell(dashboard, 0, 7, "SMART MONEY", text_color=color.gray)
+    table.cell(dashboard, 1, 7, obv_trend ? "BUYING" : "SELLING", text_color=obv_trend ? color.green : color.red)
+
+    table.cell(dashboard, 0, 8, "CONTEXT", text_color=color.gray)
+    context_text  = breadthBullish and vixCooling ? "MARKET OK" : breadthBearish and vixHeating ? "RISK-OFF" : "MIXED"
+    context_color = context_text == "MARKET OK" ? color.green : context_text == "RISK-OFF" ? color.red : color.orange
+    table.cell(dashboard, 1, 8, context_text, text_color=context_color)
+
+// ======================
+// AUTOMATION ENHANCEMENT
+// ======================
+// Added for webhook integration and auto-trading bots
+
+get_json_alert(ticker, action, price, score, conf, sl, tp) =>
+    '{"ticker": "' + ticker + '", "action": "' + action + '", "price": ' + str.tostring(price) + ', "score": ' + str.tostring(score) + ', "confidence": ' + str.tostring(conf) + ', "sl": ' + str.tostring(sl) + ', "tp": ' + str.tostring(tp) + '}'
+
+// Dynamic Risk Management (ATR Based)
+atr_risk = ta.atr(14)
+sl_long  = close - (atr_risk * 1.5)
+tp_long  = close + (atr_risk * 3.0)
+sl_short = close + (atr_risk * 1.5)
+tp_short = close - (atr_risk * 3.0)
+
+if strong_bull_signal
+    alert(get_json_alert(syminfo.ticker, "BUY_CALL", close, total_score, pred_conf, sl_long, tp_long), alert.freq_once_per_bar_close)
+
+if strong_bear_signal
+    alert(get_json_alert(syminfo.ticker, "BUY_PUT", close, total_score, pred_conf, sl_short, tp_short), alert.freq_once_per_bar_close)
+
+// Visualizing Trade Levels
+plot(strong_bull_signal ? sl_long : na, "SL Long", color=color.red, style=plot.style_cross)
+plot(strong_bull_signal ? tp_long : na, "TP Long", color=color.green, style=plot.style_cross)
+plot(strong_bear_signal ? sl_short : na, "SL Short", color=color.red, style=plot.style_cross)
+plot(strong_bear_signal ? tp_short : na, "TP Short", color=color.green, style=plot.style_cross)
