@@ -1,5 +1,5 @@
 //@version=6
-indicator("AI Predict Pro - Daytrade Edition", shorttitle="AI-PredDT", overlay=true, precision=2, max_labels_count=500, max_lines_count=500, max_boxes_count=50)
+indicator("AI Predict Pro v2.1 - Thrust & Adaptive", shorttitle="AI-PredDT-v2.1", overlay=true, precision=2, max_labels_count=500, max_lines_count=500, max_boxes_count=50)
 
 // ======================
 // USER INPUTS
@@ -9,30 +9,37 @@ grp_forecast   = "Forecast Display"
 grp_trend      = "Trend + Filters"
 grp_session    = "Session Control"
 grp_market     = "Market Context"
+grp_breakout   = "Breakout Tracker"
 
-min_score            = input.float(6.0, "Min Score", minval=4.0, maxval=8.0, group=grp_prediction, tooltip="Base model score needed before any directional bias is trusted.")
-confidence_threshold = input.float(0.7, "Confidence Level", minval=0.3, maxval=0.9, group=grp_prediction, tooltip="Minimum confidence used as the anchor for all signal thresholds.")
-signal_cooldown_bars = input.int(4, "Cooldown Bars per Signal", minval=1, maxval=20, group=grp_prediction, tooltip="Prevents back-to-back alerts on every bar.")
+min_score              = input.float(6.0, "Min Score", minval=4.0, maxval=8.0, group=grp_prediction, tooltip="Base model score needed before any directional bias is trusted.")
+confidence_threshold   = input.float(0.7, "Confidence Level", minval=0.3, maxval=0.9, group=grp_prediction, tooltip="Minimum confidence used as the anchor for all signal thresholds.")
+signal_cooldown_bars   = input.int(4, "Cooldown Bars per Signal", minval=1, maxval=20, group=grp_prediction, tooltip="Prevents back-to-back alerts on every bar.")
 
-show_forecast        = input.bool(true, "Show Forecast", group=grp_forecast)
-forecast_length      = input.int(10, "Forecast Bars", minval=5, maxval=20, group=grp_forecast)
+show_forecast          = input.bool(true, "Show Forecast", group=grp_forecast)
+forecast_length        = input.int(10, "Forecast Bars", minval=5, maxval=20, group=grp_forecast)
 
-htf_tf               = input.timeframe("60", "HTF Confirmation (EMA)", group=grp_trend)
-supertrend_factor    = input.float(2.5, "Supertrend Mult", minval=1.0, maxval=5.0, group=grp_trend)
-supertrend_period    = input.int(10, "Supertrend ATR Len", minval=5, maxval=50, group=grp_trend)
+htf_tf                 = input.timeframe("60", "HTF Confirmation (EMA)", group=grp_trend)
+supertrend_factor      = input.float(2.5, "Supertrend Mult", minval=1.0, maxval=5.0, group=grp_trend)
+supertrend_period      = input.int(10, "Supertrend ATR Len", minval=5, maxval=50, group=grp_trend)
+momentum_range_len     = input.int(6, "Momentum Range Lookback", minval=3, maxval=30, group=grp_trend)
+momentum_buffer_pct    = input.float(0.2, "Momentum Buffer (%)", minval=0.0, maxval=2.0, step=0.05, group=grp_trend)
 
-regular_hours_only   = input.bool(false, "Only Cash Session", group=grp_session, tooltip="Filters overnight / premarket bars when enabled.")
+regular_hours_only     = input.bool(false, "Only Cash Session", group=grp_session)
 
-use_breadth_filter   = input.bool(false, "Use Breadth Filter", group=grp_market)
-breadth_symbol_input = input.string("SP:SPXADP", "Breadth Symbol", inline="BRD", group=grp_market)
-breadth_timeframe    = input.timeframe("15", "Breadth Timeframe", inline="BRD", group=grp_market)
+use_breadth_filter     = input.bool(false, "Use Breadth Filter", group=grp_market)
+breadth_symbol_input   = input.string("SP:SPXADP", "Breadth Symbol", inline="BRD", group=grp_market)
+breadth_timeframe      = input.timeframe("15", "Breadth Timeframe", inline="BRD", group=grp_market)
 
-use_vix_filter       = input.bool(false, "Use VIX Filter", group=grp_market)
-vix_symbol_input     = input.string("CBOE:VIX", "VIX Symbol", inline="VIX", group=grp_market)
-vix_timeframe        = input.timeframe("15", "VIX Timeframe", inline="VIX", group=grp_market)
+use_vix_filter         = input.bool(false, "Use VIX Filter", group=grp_market)
+vix_symbol_input       = input.string("CBOE:VIX", "VIX Symbol", inline="VIX", group=grp_market)
+vix_timeframe          = input.timeframe("15", "VIX Timeframe", inline="VIX", group=grp_market)
+
+show_breakout_tracker  = input.bool(true, "Enable Breakout Tracker", group=grp_breakout)
+breakout_lookback      = input.int(20, "Breakout Lookback", minval=5, maxval=100, group=grp_breakout)
+breakout_atr_mult      = input.float(2.0, "Trailing ATR Mult", minval=0.5, maxval=5.0, step=0.1, group=grp_breakout)
 
 // ======================
-// CORE HELPERS
+// CORE HELPERS & INDICATORS (UNCHANGED)
 // ======================
 get_momentum_strength(period) =>
     (close - close[period]) / close[period]
@@ -49,28 +56,25 @@ get_trend_strength() =>
     slope = (ema_9 - ema_9[5]) / math.max(ema_9[5], syminfo.mintick)
     align * (1 + math.abs(slope))
 
-// ======================
-// INDICATORS
-// ======================
-rsi         = ta.rsi(close, 14)
-rsi_trend   = ta.linreg(rsi, 5, 0)
-atr         = ta.atr(14)
+rsi          = ta.rsi(close, 14)
+rsi_trend    = ta.linreg(rsi, 5, 0)
+atr          = ta.atr(14)
 normalized_atr = atr / close
-atr_ma      = ta.sma(normalized_atr, 50)
+atr_ma       = ta.sma(normalized_atr, 50)
 low_volatility = normalized_atr < atr_ma * 0.7
-obv         = ta.obv
-obv_ema     = ta.ema(obv, 10)
-obv_trend   = obv > obv_ema
+obv          = ta.obv
+obv_ema      = ta.ema(obv, 10)
+obv_trend    = obv > obv_ema
 
 [plusDI, minusDI, dmiAdx] = ta.dmi(14, 14)
 adx = dmiAdx
 
-vwap_val    = ta.vwap
-vwapStretch = (close - vwap_val) / vwap_val
+vwap_val     = ta.vwap
+vwapStretch  = (close - vwap_val) / vwap_val
 
-htfClose    = request.security(syminfo.tickerid, htf_tf, close)
-htfEma21    = request.security(syminfo.tickerid, htf_tf, ta.ema(close, 21))
-htfEma50    = request.security(syminfo.tickerid, htf_tf, ta.ema(close, 50))
+htfClose     = request.security(syminfo.tickerid, htf_tf, close)
+htfEma21     = request.security(syminfo.tickerid, htf_tf, ta.ema(close, 21))
+htfEma50     = request.security(syminfo.tickerid, htf_tf, ta.ema(close, 50))
 htfAlignedBull = htfClose > htfEma21 and htfEma21 > htfEma50
 htfAlignedBear = htfClose < htfEma21 and htfEma21 < htfEma50
 
@@ -99,6 +103,25 @@ breadthBearish  = not use_breadth_filter or (breadth_data_ready and breadth_val 
 vixCooling      = not use_vix_filter or (vix_data_ready and vix_val <= vix_sma)
 vixHeating      = not use_vix_filter or (vix_data_ready and vix_val > vix_sma)
 
+// Breakout tracker
+recent_breakout_high = ta.highest(high, breakout_lookback)[1]
+recent_breakout_low  = ta.lowest(low, breakout_lookback)[1]
+chandelier_long      = recent_breakout_high - atr * breakout_atr_mult
+chandelier_short     = recent_breakout_low + atr * breakout_atr_mult
+bull_breakout        = show_breakout_tracker and close > recent_breakout_high
+bear_breakout        = show_breakout_tracker and close < recent_breakout_low
+
+var int lastBreakoutDir = 0
+if bull_breakout
+    lastBreakoutDir := 1
+else if bear_breakout
+    lastBreakoutDir := -1
+
+trail_breakout_long  = lastBreakoutDir == 1 ? chandelier_long : na
+trail_breakout_short = lastBreakoutDir == -1 ? chandelier_short : na
+breakout_hold_long   = show_breakout_tracker and lastBreakoutDir == 1 and close > chandelier_long
+breakout_hold_short  = show_breakout_tracker and lastBreakoutDir == -1 and close < chandelier_short
+
 // ======================
 // PREDICTION ENGINE
 // ======================
@@ -115,15 +138,15 @@ calculate_prediction() =>
     total_score    = momentum_score + trend_score + volume_score + obv_score + rsi_score + adx_score + vwap_score
     dir            = total_score > min_score ? 1 : total_score < -min_score ? -1 : 0
     max_component  = math.max(math.abs(momentum_score), math.abs(trend_score), math.abs(volume_score), math.abs(obv_score), math.abs(rsi_score), math.abs(adx_score), math.abs(vwap_score))
-    conf_from_total = math.abs(total_score) / 45
-    conf_from_component = max_component / 12
+    conf_from_total = math.abs(total_score) / 65
+    conf_from_component = max_component / 18
     conf           = math.min(math.max(conf_from_total, conf_from_component), 1.0)
     [dir, conf, total_score]
 
 [pred_dir, pred_conf, total_score] = calculate_prediction()
 
 // ======================
-// FORECAST
+// FORECAST (UNCHANGED)
 // ======================
 var line[] forecast_lines = array.new_line()
 var label  forecast_label = na
@@ -157,19 +180,16 @@ if barstate.islast and show_forecast
                       array.get(forecast_prices, i - 1),
                       bar_index + i,
                       array.get(forecast_prices, i),
-                      color=line_color, style=line_style, width=2)
+                      color=line_color, style=line.style_solid, width=2)
         array.push(forecast_lines, id)
 
     forecast_text = pred_dir > 0 ? "BULL" : pred_dir < 0 ? "BEAR" : "FLAT"
     conf_text     = "Conf: " + str.tostring(math.round(pred_conf * 100, 0)) + "%"
     if array.size(forecast_prices) >= forecast_length
-        forecast_label := label.new(bar_index + forecast_length,
-                                    array.get(forecast_prices, forecast_length - 1),
-                                    forecast_text + "\n" + conf_text,
-                                    color=line_color, textcolor=color.white, style=label.style_label_center)
+        forecast_label := label.new(bar_index + forecast_length, array.get(forecast_prices, forecast_length - 1), forecast_text + "\n" + conf_text, color=line_color, textcolor=color.white, style=label.style_label_center)
 
 // ======================
-// SIGNAL FILTERS
+// SIGNAL FILTERS & LOGIC (UPGRADED)
 // ======================
 ema9  = ta.ema(close, 9)
 ema21 = ta.ema(close, 21)
@@ -177,15 +197,23 @@ ema50 = ta.ema(close, 50)
 
 trendAlignedBull = ema9 > ema21 and ema21 > ema50
 trendAlignedBear = ema9 < ema21 and ema21 < ema50
-solidMomentumUp  = close > ta.highest(high, 6) and rsi > 55
-solidMomentumDn  = close < ta.lowest(low, 6) and rsi < 45
+buffer_mult_high = 1 + momentum_buffer_pct / 100
+buffer_mult_low  = 1 - momentum_buffer_pct / 100
+prior_range_high = ta.highest(high, momentum_range_len)[1] * buffer_mult_high
+prior_range_low  = ta.lowest(low, momentum_range_len)[1] * buffer_mult_low
+
+// Momentum condition is now a **breakout + RSI confirmation**
+solidMomentumUp  = close > prior_range_high and rsi > 55
+solidMomentumDn  = close < prior_range_low and rsi < 45
 healthyVol       = ta.sma(volume, 5) > ta.sma(volume, 20) or obv_trend
 
 strongConfidence = math.max(confidence_threshold + 0.1, 0.8)
 setupConfidence  = math.max(confidence_threshold, 0.65)
+thrustConfidence = math.max(confidence_threshold, 0.7) // Thrust: requires high AI conviction
 
 strongScoreThreshold = math.max(min_score * 4.0, 24.0)
 setupScoreThreshold  = math.max(min_score * 2.3, 14.0)
+thrustScoreThreshold = math.max(min_score * 3.0, 18.0) // Thrust: mid-tier score
 
 cashSession = not na(time(timeframe.period, "0930-1600"))
 sessionOk   = not regular_hours_only or cashSession
@@ -202,48 +230,72 @@ bearCooldownOk = na(lastBearSignalBar) or bar_index - lastBearSignalBar >= signa
 trendContextBull = supertrendBull or htfAlignedBull
 trendContextBear = supertrendBear or htfAlignedBear
 
+// NEW THRUST SIGNAL: Prioritizes Breakout Hold over Solid Momentum filter
+bull_thrust_signal = sessionOk and bullCooldownOk and trendContextBull and breakout_hold_long and healthyVol and pred_conf >= thrustConfidence and total_score > thrustScoreThreshold and breadthOkBull
+bear_thrust_signal = sessionOk and bearCooldownOk and trendContextBear and breakout_hold_short and healthyVol and pred_conf >= thrustConfidence and total_score < -thrustScoreThreshold and breadthOkBear
+
+
+// STRONG SIGNAL: Requires both Trend Alignment (EMA stack) AND Solid Momentum (RSI + Buffered Breakout)
 strong_bull_signal = sessionOk and bullCooldownOk and trendAlignedBull and trendContextBull and solidMomentumUp and healthyVol and adx > 22 and plusDI > minusDI and pred_conf >= strongConfidence and total_score > strongScoreThreshold and breadthOkBull
 strong_bear_signal = sessionOk and bearCooldownOk and trendAlignedBear and trendContextBear and solidMomentumDn and healthyVol and adx > 22 and minusDI > plusDI and pred_conf >= strongConfidence and total_score < -strongScoreThreshold and breadthOkBear
 
+// SETUP SIGNAL: Less stringent score/confidence, uses Solid Momentum
 bull_setup = sessionOk and bullCooldownOk and trendAlignedBull and trendContextBull and solidMomentumUp and pred_conf >= setupConfidence and total_score > setupScoreThreshold and healthyVol and adx > 18 and breadthOkBull
 bear_setup = sessionOk and bearCooldownOk and trendAlignedBear and trendContextBear and solidMomentumDn and pred_conf >= setupConfidence and total_score < -setupScoreThreshold and healthyVol and adx > 18 and breadthOkBear
 
-if strong_bull_signal or bull_setup
+
+if strong_bull_signal or bull_setup or bull_thrust_signal
     lastBullSignalBar := bar_index
-if strong_bear_signal or bear_setup
+if strong_bear_signal or bear_setup or bear_thrust_signal
     lastBearSignalBar := bar_index
 
 bullInvalidate = ta.lowest(low, 3)
 bearInvalidate = ta.highest(high, 3)
 
 // ======================
-// LABELS
+// LABELS (FIXED STRING FORMATTING)
 // ======================
 if barstate.isconfirmed
+    // STRONG SIGNALS
     if strong_bull_signal
-        label.new(bar_index, low, "STRONG BUY\nInv: " + str.tostring(bullInvalidate, format.percent), color=color.green, textcolor=color.white, style=label.style_label_up, yloc=yloc.belowbar, size=size.large)
+        label.new(bar_index, low, "STRONG BUY\nInv: " + str.tostring(bullInvalidate, "#.##"), color=color.green, textcolor=color.white, style=label.style_label_up, yloc=yloc.belowbar, size=size.large)
     if strong_bear_signal
-        label.new(bar_index, high, "STRONG SELL\nInv: " + str.tostring(bearInvalidate, format.percent), color=color.red, textcolor=color.white, style=label.style_label_down, yloc=yloc.abovebar, size=size.large)
-    if bull_setup and not strong_bull_signal
+        label.new(bar_index, high, "STRONG SELL\nInv: " + str.tostring(bearInvalidate, "#.##"), color=color.red, textcolor=color.white, style=label.style_label_down, yloc=yloc.abovebar, size=size.large)
+    
+    // THRUST SIGNALS (Requires not being a Strong Signal already)
+    if bull_thrust_signal and not strong_bull_signal
+        label.new(bar_index, low, "BULL THRUST", color=color.new(color.blue, 0), textcolor=color.white, style=label.style_label_up, yloc=yloc.belowbar)
+    if bear_thrust_signal and not strong_bear_signal
+        label.new(bar_index, high, "BEAR THRUST", color=color.new(color.fuchsia, 0), textcolor=color.white, style=label.style_label_down, yloc=yloc.abovebar)
+
+    // SETUP SIGNALS (Requires not being Strong or Thrust already)
+    if bull_setup and not strong_bull_signal and not bull_thrust_signal
         label.new(bar_index, low, "BUY SETUP", color=color.lime, textcolor=color.black, style=label.style_label_up, yloc=yloc.belowbar)
-    if bear_setup and not strong_bear_signal
+    if bear_setup and not strong_bear_signal and not bear_thrust_signal
         label.new(bar_index, high, "SELL SETUP", color=color.maroon, textcolor=color.white, style=label.style_label_down, yloc=yloc.abovebar)
+    
+    // BREAKOUT TRACKER LABELS
+    if show_breakout_tracker
+        if bull_breakout
+            label.new(bar_index, low, "BREAKOUT LONG", color=color.new(color.green, 20), textcolor=color.white, style=label.style_label_up, yloc=yloc.belowbar)
+        if bear_breakout
+            label.new(bar_index, high, "BREAKOUT SHORT", color=color.new(color.red, 20), textcolor=color.white, style=label.style_label_down, yloc=yloc.abovebar)
 
 // ======================
-// DASHBOARD
+// DASHBOARD (UPDATED FOR THRUST)
 // ======================
-var table dashboard = table.new(position.top_right, 2, 9, bgcolor=color.new(#1A1A1A, 95), border_width=1)
+var table dashboard = table.new(position.top_right, 2, 10, bgcolor=color.new(#1A1A1A, 95), border_width=1)
 
 if barstate.islast
     table.cell(dashboard, 0, 0, "AI", bgcolor=color.purple, text_color=color.white)
-    table.cell(dashboard, 1, 0, "DAYTRADE", bgcolor=color.purple, text_color=color.white)
+    table.cell(dashboard, 1, 0, "DAYTRADE v2.1", bgcolor=color.purple, text_color=color.white)
 
     table.cell(dashboard, 0, 1, "SCORE", text_color=color.gray)
     score_color = total_score > 30 ? color.green : total_score < -30 ? color.red : total_score > 15 ? color.lime : total_score < -15 ? color.orange : color.gray
     table.cell(dashboard, 1, 1, str.tostring(math.round(total_score, 1)), text_color=score_color)
 
     table.cell(dashboard, 0, 2, "DIRECTION", text_color=color.gray)
-    dir_text  = pred_dir > 0 ? "BULLISH" : pred_dir < 0 ? "BEARISH" : "NEUTRAL"
+    dir_text    = pred_dir > 0 ? "BULLISH" : pred_dir < 0 ? "BEARISH" : "NEUTRAL"
     dir_color = pred_dir > 0 ? color.green : pred_dir < 0 ? color.red : color.gray
     table.cell(dashboard, 1, 2, dir_text, text_color=dir_color)
 
@@ -252,8 +304,8 @@ if barstate.islast
     table.cell(dashboard, 1, 3, str.tostring(math.round(pred_conf * 100, 0)) + "%", text_color=conf_color)
 
     table.cell(dashboard, 0, 4, "SIGNAL", text_color=color.gray)
-    signal_text = strong_bull_signal ? "STRONG BUY" : strong_bear_signal ? "STRONG SELL" : bull_setup ? "BUY SETUP" : bear_setup ? "SELL SETUP" : "NO SIGNAL"
-    signal_color = strong_bull_signal ? color.green : strong_bear_signal ? color.red : bull_setup ? color.lime : bear_setup ? color.maroon : color.gray
+    signal_text = strong_bull_signal ? "STRONG BUY" : strong_bear_signal ? "STRONG SELL" : bull_thrust_signal ? "BULL THRUST" : bear_thrust_signal ? "BEAR THRUST" : bull_setup ? "BUY SETUP" : bear_setup ? "SELL SETUP" : "NO SIGNAL"
+    signal_color = strong_bull_signal ? color.green : strong_bear_signal ? color.red : bull_thrust_signal ? color.blue : bear_thrust_signal ? color.fuchsia : bull_setup ? color.lime : bear_setup ? color.maroon : color.gray
     table.cell(dashboard, 1, 4, signal_text, text_color=signal_color)
 
     table.cell(dashboard, 0, 5, "VOLATILITY", text_color=color.gray)
@@ -266,15 +318,18 @@ if barstate.islast
     table.cell(dashboard, 1, 7, obv_trend ? "BUYING" : "SELLING", text_color=obv_trend ? color.green : color.red)
 
     table.cell(dashboard, 0, 8, "CONTEXT", text_color=color.gray)
-    context_text  = breadthBullish and vixCooling ? "MARKET OK" : breadthBearish and vixHeating ? "RISK-OFF" : "MIXED"
+    context_text    = breadthBullish and vixCooling ? "MARKET OK" : breadthBearish and vixHeating ? "RISK-OFF" : "MIXED"
     context_color = context_text == "MARKET OK" ? color.green : context_text == "RISK-OFF" ? color.red : color.orange
     table.cell(dashboard, 1, 8, context_text, text_color=context_color)
+
+    table.cell(dashboard, 0, 9, "BREAKOUT", text_color=color.gray)
+    breakout_text = not show_breakout_tracker ? "OFF" : lastBreakoutDir == 1 ? (breakout_hold_long ? "LONG HOLD" : "LONG") : lastBreakoutDir == -1 ? (breakout_hold_short ? "SHORT HOLD" : "SHORT") : "NONE"
+    breakout_color = not show_breakout_tracker ? color.gray : lastBreakoutDir == 1 ? color.green : lastBreakoutDir == -1 ? color.red : color.gray
+    table.cell(dashboard, 1, 9, breakout_text, text_color=breakout_color)
 
 // ======================
 // AUTOMATION ENHANCEMENT
 // ======================
-// Added for webhook integration and auto-trading bots
-
 get_json_alert(ticker, action, price, score, conf, sl, tp) =>
     '{"ticker": "' + ticker + '", "action": "' + action + '", "price": ' + str.tostring(price) + ', "score": ' + str.tostring(score) + ', "confidence": ' + str.tostring(conf) + ', "sl": ' + str.tostring(sl) + ', "tp": ' + str.tostring(tp) + '}'
 
@@ -285,14 +340,17 @@ tp_long  = close + (atr_risk * 3.0)
 sl_short = close + (atr_risk * 1.5)
 tp_short = close - (atr_risk * 3.0)
 
-if strong_bull_signal
+// Alert for Strong or Thrust signals
+if strong_bull_signal or bull_thrust_signal
     alert(get_json_alert(syminfo.ticker, "BUY_CALL", close, total_score, pred_conf, sl_long, tp_long), alert.freq_once_per_bar_close)
 
-if strong_bear_signal
+if strong_bear_signal or bear_thrust_signal
     alert(get_json_alert(syminfo.ticker, "BUY_PUT", close, total_score, pred_conf, sl_short, tp_short), alert.freq_once_per_bar_close)
 
 // Visualizing Trade Levels
-plot(strong_bull_signal ? sl_long : na, "SL Long", color=color.red, style=plot.style_cross)
-plot(strong_bull_signal ? tp_long : na, "TP Long", color=color.green, style=plot.style_cross)
-plot(strong_bear_signal ? sl_short : na, "SL Short", color=color.red, style=plot.style_cross)
-plot(strong_bear_signal ? tp_short : na, "TP Short", color=color.green, style=plot.style_cross)
+plot(strong_bull_signal or bull_thrust_signal ? sl_long : na, "SL Long", color=color.red, style=plot.style_cross)
+plot(strong_bull_signal or bull_thrust_signal ? tp_long : na, "TP Long", color=color.green, style=plot.style_cross)
+plot(strong_bear_signal or bear_thrust_signal ? sl_short : na, "SL Short", color=color.red, style=plot.style_cross)
+plot(strong_bear_signal or bear_thrust_signal ? tp_short : na, "TP Short", color=color.green, style=plot.style_cross)
+plot(show_breakout_tracker ? trail_breakout_long : na, "Breakout Trail Long", color=color.new(color.green, 20), linewidth=2, style=plot.style_linebr)
+plot(show_breakout_tracker ? trail_breakout_short : na, "Breakout Trail Short", color=color.new(color.red, 20), linewidth=2, style=plot.style_linebr)
